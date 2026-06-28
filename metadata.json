@@ -1,0 +1,6 @@
+{
+  "name": "Zomorod VPN Admin",
+  "description": "A dark-themed admin panel for managing VPN services, featuring a sleek Night Emerald design system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
