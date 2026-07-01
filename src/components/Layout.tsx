@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { APP_NAME, APP_NAME_SHORT } from '../lib/branding';
 
 interface LayoutProps {
   onLogout: () => void;
@@ -34,7 +35,7 @@ export default function Layout({ onLogout }: LayoutProps) {
           <span className="material-symbols-outlined text-primary text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>shield</span>
         </div>
         <div className="flex flex-col">
-          <span className="font-headline-sm text-[18px] font-bold text-on-surface tracking-wide">مدیریت وی‌پی‌ان</span>
+          <span className="font-headline-sm text-[18px] font-bold text-on-surface tracking-wide">{APP_NAME}</span>
         </div>
       </div>
       
@@ -133,7 +134,7 @@ export default function Layout({ onLogout }: LayoutProps) {
             <div className="flex items-center gap-3 cursor-pointer group">
               <div className="hidden sm:flex flex-col items-end">
                 <span className="font-label-lg text-label-lg text-on-surface group-hover:text-primary transition-colors">ادمین اصلی</span>
-                <span className="font-label-md text-label-md text-on-surface-variant">پنل زمرد</span>
+                <span className="font-label-md text-label-md text-on-surface-variant">{APP_NAME_SHORT}</span>
               </div>
               <div className="w-10 h-10 rounded-xl overflow-hidden border border-surface-container-low group-hover:border-primary/50 transition-colors">
                 <img 
@@ -152,7 +153,7 @@ export default function Layout({ onLogout }: LayoutProps) {
             >
               <span className="material-symbols-outlined">menu</span>
             </button>
-            <span className="font-headline-sm text-headline-sm text-on-surface tracking-wide">مدیریت وی‌پی‌ان</span>
+            <span className="font-headline-sm text-headline-sm text-on-surface tracking-wide">{APP_NAME_SHORT}</span>
           </div>
           
           <div className="hidden md:flex items-center gap-4 text-on-surface-variant">

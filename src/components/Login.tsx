@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { APP_NAME_SHORT } from '../lib/branding';
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
@@ -161,9 +162,9 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
             className="mb-1 text-[28px] font-bold leading-tight text-primary"
             style={{ textShadow: '0 0 12px rgba(78, 222, 163, 0.35)' }}
           >
-            زمرد
+            {APP_NAME_SHORT}
           </h1>
-          <p className="text-sm text-on-surface-variant">ورود به پنل مدیریت</p>
+          <p className="text-sm text-on-surface-variant">Admin Panel</p>
 
           <div className="mt-5 flex items-center justify-center gap-2">
             <span

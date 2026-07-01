@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './components/Login';
 import Layout from './components/Layout';
@@ -14,11 +14,16 @@ import Users from './pages/Users';
 import Finance from './pages/Finance';
 import Marketing from './pages/Marketing';
 import Admins from './pages/Admins';
+import { APP_NAME } from './lib/branding';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(
     () => !!localStorage.getItem('adminToken')
   );
+
+  useEffect(() => {
+    document.title = APP_NAME;
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
