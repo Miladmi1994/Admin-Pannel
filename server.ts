@@ -1,16 +1,37 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
-import mongoose from "mongoose";
+import fs from "fs";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import { ServerModel, SettingsModel, UserModel, AdminModel } from "./src/models/index.js";
-import { setupBot } from "./src/bot/index.js";
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/cyphernet";
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const DB_PATH = process.env.DB_PATH || "/root/telbot-test/telbot.db";
+const otpStorage = new Map<string, { code: string, expiresAt: number }>();
+// --- توابع مدیریت دیتابیس لوکال ---
+function readDb() {
+  try {
+    if (!fs.existsSync(DB_PATH)) {
+      const defaultDb = { settings: {}, plans: {}, servers: {}, users: {}, configs: {} };
+      fs.writeFileSync(DB_PATH, JSON.stringify(defaultDb, null, 2), 'utf8');
+      return defaultDb;
+    }
+    const data = fs.readFileSync(DB_PATH, 'utf8');
+    return JSON.parse(data);
+  } catch (err) {
+    console.error("Error reading DB:", err);
+    return { settings: {}, plans: {}, servers: {}, users: {}, configs: {} };
+  }
+}
+
+function writeDb(data: any) {
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error("Error writing DB:", err);
+  }
+}
 
 async function startServer() {
   const app = express();
@@ -19,209 +40,217 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // Connect to MongoDB
-  try {
-    await mongoose.connect(MONGODB_URI);
-    console.log("Connected to MongoDB successfully");
-    
-    // Initialize default settings if they don't exist
-    const settings = await SettingsModel.findOne();
-    if (!settings) {
-      await SettingsModel.create({
-        salesOpen: true,
-        maintenance: false,
-        plans: [
-          { id: '30', name: '30 گیگ یک ماهه', gb: 30, days: 30, price: 180000, order: 1, showInNew: true, showInRenew: true, btnText: '📦 30 گیگ - 1 ماهه (180,000 تومان)', sold: 0 },
-          { id: '50', name: '50 گیگ یک ماهه', gb: 50, days: 30, price: 275000, order: 2, showInNew: true, showInRenew: true, btnText: '📦 50 گیگ - 1 ماهه (275,000 تومان)', sold: 0 },
-          { id: '100', name: '100 گیگ دو ماهه', gb: 100, days: 60, price: 500000, order: 3, showInNew: true, showInRenew: true, btnText: '📦 100 گیگ - 2 ماهه (500,000 تومان)', sold: 0 }
-        ],
-        totalIncome: 0,
-        successfulSales: 0,
-        abandonedCarts: 0,
-        testToBuyConversion: 0
-      });
-      console.log("Created default settings");
-    }
-  } catch (err) {
-    console.error("MongoDB connection error:", err);
-  }
-
-  // Start the bot if token is present
-  if (BOT_TOKEN) {
-    try {
-      setupBot(BOT_TOKEN);
-    } catch (error) {
-      console.error("Error setting up the bot:", error);
-    }
-  } else {
-    console.warn("No BOT_TOKEN found. Bot will not be started.");
-  }
-
   // --- API Routes ---
 
-  // Health
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", dbState: mongoose.connection.readyState });
+    res.json({ status: "ok", dbState: fs.existsSync(DB_PATH) ? "connected" : "missing" });
   });
 
-  // Settings & Dashboard Stats
-  app.get("/api/settings", async (req, res) => {
+  // --- Auth Routes ---
+  app.post("/api/auth/request-code", async (req, res) => {
     try {
-      const settings = await SettingsModel.findOne();
-      res.json({ success: true, settings });
+      const { telegramId } = req.body;
+      const db = readDb();
+      const user = db.users[telegramId];
+
+      // بررسی وجود کاربر و ادمین بودن
+      if (!user || !user.isAdmin) {
+        return res.status(403).json({ success: false, message: "شما دسترسی ادمین ندارید یا آیدی اشتباه است." });
+      }
+
+      // تولید کد ۵ رقمی
+      const code = Math.floor(10000 + Math.random() * 90000).toString();
+      otpStorage.set(telegramId, { code, expiresAt: Date.now() + 5 * 60 * 1000 }); // اعتبار 5 دقیقه
+
+      // ارسال پیام به تلگرام از طریق API مستقیم (بدون نیاز به کتابخانه اضافی)
+      const botToken = process.env.BOT_TOKEN;
+      if (botToken) {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: telegramId,
+            text: `🔐 <b>کد ورود به پنل مدیریت سایت:</b>\n\n<code>${code}</code>\n\n⏳ این کد فقط ۵ دقیقه اعتبار دارد.`,
+            parse_mode: "HTML"
+          })
+        });
+      }
+
+      res.json({ success: true, message: "کد تایید به پی‌وی تلگرام شما ارسال شد." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: "خطای سرور: " + err.message });
+    }
+  });
+
+  app.post("/api/auth/verify-code", (req, res) => {
+    try {
+      const { telegramId, code } = req.body;
+      const record = otpStorage.get(telegramId);
+
+      if (!record || record.expiresAt < Date.now() || record.code !== code) {
+        return res.status(401).json({ success: false, message: "کد نامعتبر است یا منقضی شده." });
+      }
+
+      // حذف کد پس از استفاده موفق
+      otpStorage.delete(telegramId);
+
+      // ساخت یک توکن ساده برای نشست فعلی (در مرورگر)
+      const token = Buffer.from(`${telegramId}-admin-${Date.now()}`).toString('base64');
+      
+      res.json({ success: true, token });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+  // Settings & Dashboard Stats
+  app.get("/api/settings", (req, res) => {
+    try {
+      const db = readDb();
+      res.json({ success: true, settings: db.settings });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
-  app.post("/api/settings", async (req, res) => {
+  app.post("/api/settings", (req, res) => {
     try {
-      const settings = await SettingsModel.findOne();
-      if (settings) {
-        if (req.body.salesOpen !== undefined) settings.salesOpen = req.body.salesOpen;
-        if (req.body.maintenance !== undefined) settings.maintenance = req.body.maintenance;
-        if (req.body.activeServerId !== undefined) settings.activeServerId = req.body.activeServerId;
-        if (req.body.activeVipServerId !== undefined) settings.activeVipServerId = req.body.activeVipServerId;
-        await settings.save();
-      }
-      res.json({ success: true, settings });
+      const db = readDb();
+      db.settings = { ...db.settings, ...req.body };
+      writeDb(db);
+      res.json({ success: true, settings: db.settings });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
   // Plans
-  app.get("/api/plans", async (req, res) => {
+  app.get("/api/plans", (req, res) => {
     try {
-      const settings = await SettingsModel.findOne();
-      res.json({ success: true, plans: settings?.plans || [] });
+      const db = readDb();
+      const plansArray = Object.values(db.plans || {}).sort((a: any, b: any) => a.order - b.order);
+      res.json({ success: true, plans: plansArray });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
-  app.post("/api/plans", async (req, res) => {
+  app.post("/api/plans", (req, res) => {
     try {
-      const settings = await SettingsModel.findOne();
-      if (settings) {
-        settings.plans = req.body.plans;
-        await settings.save();
-      }
-      res.json({ success: true, plans: settings?.plans });
+      const db = readDb();
+      const newPlansArray = req.body.plans || [];
+      db.plans = {};
+      newPlansArray.forEach((p: any) => {
+        db.plans[p.id] = p;
+      });
+      writeDb(db);
+      res.json({ success: true, plans: newPlansArray });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
   // Users
-  app.get("/api/users", async (req, res) => {
+  app.get("/api/users", (req, res) => {
     try {
-      const users = await UserModel.find();
-      res.json({ success: true, users });
-    } catch (err: any) {
-      res.status(500).json({ success: false, message: err.message });
-    }
-  });
-
-  app.post("/api/users/:id/block", async (req, res) => {
-    try {
-      const user = await UserModel.findOne({ telegramId: req.params.id });
-      if (user) {
-        user.isBanned = req.body.isBanned;
-        await user.save();
-        res.json({ success: true, user });
-      } else {
-        res.status(404).json({ success: false, message: "User not found" });
-      }
-    } catch (err: any) {
-      res.status(500).json({ success: false, message: err.message });
-    }
-  });
-
-  app.post("/api/users/:id/vip", async (req, res) => {
-    try {
-      const user = await UserModel.findOne({ telegramId: req.params.id });
-      if (user) {
-        user.isVip = req.body.isVip;
-        // Optionally update all their configs
-        user.configs.forEach(c => c.isVip = req.body.isVip);
-        await user.save();
-        res.json({ success: true, user });
-      } else {
-        res.status(404).json({ success: false, message: "User not found" });
-      }
-    } catch (err: any) {
-      res.status(500).json({ success: false, message: err.message });
-    }
-  });
-
-  // Add more bot-specific APIs here for bot actions (like record purchase)
-  app.post("/api/bot/purchase", async (req, res) => {
-    // API used by the telegram bot to record a purchase
-    try {
-      const { telegramId, planId, configName, orderId, price, serverId, uuid, email, isVip } = req.body;
-      
-      let user = await UserModel.findOne({ telegramId });
-      if (!user) {
-        user = new UserModel({ telegramId, configs: [], stats: { totalSpent: 0, buyCount: 0, renewCount: 0 } });
-      }
-      
-      user.configs.push({
-        email, uuid, name: configName, serverId, isVip, orderId
+      const db = readDb();
+      // تبدیل آبجکت یوزرها به آرایه و چسباندن کانفیگ‌های هر نفر به خودش برای نمایش در سایت
+      const usersArray = Object.values(db.users || {}).map((u: any) => {
+        const userConfigs = Object.values(db.configs || {}).filter((c: any) => c.telegramId === String(u.telegramId));
+        return { ...u, configs: userConfigs };
       });
-      user.stats.totalSpent += price;
-      user.stats.buyCount += 1;
-      await user.save();
-      
-      const settings = await SettingsModel.findOne();
-      if (settings) {
-        settings.totalIncome += price;
-        settings.successfulSales += 1;
-        const plan = settings.plans.find(p => p.id === planId);
-        if (plan) {
-          plan.sold = (plan.sold || 0) + 1;
-        }
-        await settings.save();
+      res.json({ success: true, users: usersArray });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/users/:id/block", (req, res) => {
+    try {
+      const db = readDb();
+      const userId = String(req.params.id);
+      if (db.users[userId]) {
+        db.users[userId].isBanned = req.body.isBanned;
+        writeDb(db);
+        res.json({ success: true, user: db.users[userId] });
+      } else {
+        res.status(404).json({ success: false, message: "User not found" });
       }
-      
-      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/users/:id/vip", (req, res) => {
+    try {
+      const db = readDb();
+      const userId = String(req.params.id);
+      if (db.users[userId]) {
+        db.users[userId].isVip = req.body.isVip;
+        
+        // آپدیت همزمان وضعیت VIP در کانفیگ‌های این شخص
+        Object.keys(db.configs || {}).forEach(uuid => {
+          if (db.configs[uuid].telegramId === userId) {
+            db.configs[uuid].isVip = req.body.isVip;
+          }
+        });
+
+        writeDb(db);
+        res.json({ success: true, user: db.users[userId] });
+      } else {
+        res.status(404).json({ success: false, message: "User not found" });
+      }
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
   // Servers
-  app.get("/api/servers", async (req, res) => {
+  app.get("/api/servers", (req, res) => {
     try {
-      const servers = await ServerModel.find();
-      res.json({ success: true, servers });
+      const db = readDb();
+      res.json({ success: true, servers: Object.values(db.servers || {}) });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
-  app.post("/api/servers", async (req, res) => {
+  app.post("/api/servers", (req, res) => {
     try {
-      const server = new ServerModel(req.body);
-      await server.save();
-      res.json({ success: true, server });
+      const db = readDb();
+      const newServer = req.body;
+      if (!db.servers) db.servers = {};
+      db.servers[newServer.id] = newServer;
+      writeDb(db);
+      res.json({ success: true, server: newServer });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
   
-  app.put("/api/servers/:id", async (req, res) => {
+  app.put("/api/servers/:id", (req, res) => {
     try {
-      const server = await ServerModel.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-      res.json({ success: true, server });
+      const db = readDb();
+      const serverId = req.params.id;
+      if (db.servers && db.servers[serverId]) {
+        db.servers[serverId] = { ...db.servers[serverId], ...req.body };
+        writeDb(db);
+        res.json({ success: true, server: db.servers[serverId] });
+      } else {
+        res.status(404).json({ success: false, message: "Server not found" });
+      }
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
-  app.delete("/api/servers/:id", async (req, res) => {
+  app.delete("/api/servers/:id", (req, res) => {
     try {
-      await ServerModel.findOneAndDelete({ id: req.params.id });
+      const db = readDb();
+      const serverId = req.params.id;
+      if (db.servers && db.servers[serverId]) {
+        delete db.servers[serverId];
+        writeDb(db);
+      }
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
