@@ -21,14 +21,12 @@ export default function Dashboard() {
       try {
         setIsLoading(true);
         
-        const [resSettings, resUsers, resHealth, resMarketing] = await Promise.all([
+        const [resSettings, resHealth, resMarketing] = await Promise.all([
           fetch('/api/settings'),
-          fetch('/api/users'),
           fetch('/api/health'),
           fetch('/api/marketing'),
         ]);
         const dataSettings = await resSettings.json();
-        const dataUsers = await resUsers.json();
         const dataHealth = await resHealth.json();
         const dataMarketing = await resMarketing.json();
 
@@ -40,21 +38,17 @@ export default function Dashboard() {
           });
         }
 
-        let configsCount = 0;
-        if (dataUsers.success) {
-          dataUsers.users.forEach((u: any) => {
-            configsCount += (u.configs || []).length;
-          });
-        }
+        const activeConfigs =
+          dataHealth.counts?.activeServices ??
+          dataHealth.counts?.services ??
+          0;
 
-        if (dataSettings.success) {
-          setStats({
-            totalIncome: dataSettings.settings.totalIncome || 0,
-            successfulSales: dataSettings.settings.successfulSales || 0,
-            activeConfigs: configsCount,
-            abandonedCarts: dataSettings.settings.abandonedCarts || 0
-          });
-        }
+        setStats({
+          totalIncome: dataSettings.success ? (dataSettings.settings.totalIncome || 0) : 0,
+          successfulSales: dataSettings.success ? (dataSettings.settings.successfulSales || 0) : 0,
+          activeConfigs,
+          abandonedCarts: dataSettings.success ? (dataSettings.settings.abandonedCarts || 0) : 0,
+        });
 
         if (dataMarketing.success && dataMarketing.marketing.topPlans?.length) {
           setChartData(
@@ -74,10 +68,9 @@ export default function Dashboard() {
     fetchDashboardData();
   }, []);
 
-  // تابع فرمت کردن اعداد به تومان
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('fa-IR').format(price);
-  };
+  // تابع فرمت کردن اعداد
+  const formatNumber = (n: number) => new Intl.NumberFormat('fa-IR').format(n);
+  const formatPrice = (price: number) => formatNumber(price);
 
   return (
     <div className="flex-1 flex flex-col max-w-7xl mx-auto w-full pb-10">
@@ -98,7 +91,7 @@ export default function Dashboard() {
           {[
             { title: 'درآمد کل', value: formatPrice(stats.totalIncome), icon: 'account_balance_wallet', isBad: false, label: 'تومان' },
             { title: 'فروش موفق', value: formatPrice(stats.successfulSales), icon: 'shopping_cart_checkout', isBad: false, label: 'مورد' },
-            { title: 'کانفیگ‌های فعال', value: formatPrice(stats.activeConfigs), icon: 'network_check', isBad: false, indicator: true, label: 'عدد' },
+            { title: 'کانفیگ‌های فعال', value: formatNumber(stats.activeConfigs), icon: 'network_check', isBad: false, indicator: true, label: 'عدد' },
             { title: 'سبدهای رها شده', value: formatPrice(stats.abandonedCarts), icon: 'remove_shopping_cart', isBad: true, label: 'مورد' },
           ].map((stat, i) => (
             <motion.div
@@ -174,7 +167,7 @@ export default function Dashboard() {
                   </p>
                   {dbHealth.counts && (
                     <p className="text-xs text-on-surface-variant mt-2 font-mono" dir="ltr">
-                      users: {dbHealth.counts.users} · services: {dbHealth.counts.services} · plans: {dbHealth.counts.plans}
+                      users: {dbHealth.counts.users} · services: {dbHealth.counts.activeServices ?? dbHealth.counts.services} · plans: {dbHealth.counts.plans}
                     </p>
                   )}
                </div>

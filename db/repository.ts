@@ -544,9 +544,16 @@ export function getDbStats(dbPath: string) {
     `).get() as { c: number }
   ).c;
 
+  const activeServices = (
+    db.prepare("SELECT COUNT(*) AS c FROM services WHERE deleted_from_panel = 0").get() as {
+      c: number;
+    }
+  ).c;
+
   return {
     users: userCount,
     services: (db.prepare("SELECT COUNT(*) AS c FROM services").get() as { c: number }).c,
+    activeServices,
     plans: (db.prepare("SELECT COUNT(*) AS c FROM plans").get() as { c: number }).c,
     servers: (db.prepare("SELECT COUNT(*) AS c FROM servers").get() as { c: number }).c,
   };
