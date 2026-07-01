@@ -11,7 +11,7 @@ export default function Dashboard() {
     activeConfigs: 0,
     abandonedCarts: 0
   });
-  const [dbHealth, setDbHealth] = useState<{ mode: string; connected: boolean; counts?: Record<string, number> }>({
+  const [dbHealth, setDbHealth] = useState<{ mode: string; connected: boolean; publicUrl?: string; counts?: Record<string, number> }>({
     mode: 'unknown',
     connected: false,
   });
@@ -34,6 +34,7 @@ export default function Dashboard() {
           setDbHealth({
             mode: dataHealth.dbMode,
             connected: dataHealth.dbState === 'connected',
+            publicUrl: dataHealth.publicUrl,
             counts: dataHealth.counts,
           });
         }
@@ -173,7 +174,9 @@ export default function Dashboard() {
                </div>
                <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30">
                   <p className="text-sm text-on-surface-variant">آدرس پنل:</p>
-                  <p className="text-on-surface font-mono mt-1 text-sm" dir="ltr">{typeof window !== 'undefined' ? window.location.host : '—'}</p>
+                  <p className="text-on-surface font-mono mt-1 text-sm" dir="ltr">
+                    {dbHealth.publicUrl || (typeof window !== 'undefined' ? window.location.origin : '—')}
+                  </p>
                </div>
             </div>
           </div>

@@ -31,6 +31,7 @@ import {
 dotenv.config();
 
 const DB_PATH = process.env.DB_PATH || "/root/telbot-test/telbot.db";
+const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const otpStorage = new Map<string, { code: string; expiresAt: number }>();
 
 if (isSqlitePath(DB_PATH)) {
@@ -46,17 +47,31 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-  app.use(cors());
+  if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1);
+  }
+
+  if (APP_URL) {
+    app.use(cors({ origin: [APP_URL, `http://localhost:${PORT}`], credentials: true }));
+  } else {
+    app.use(cors());
+  }
   app.use(express.json());
 
   app.get("/api/health", (req, res) => {
     const health = getHealth(DB_PATH);
     const stats = health.connected && isSqlitePath(DB_PATH) ? getDbStats(DB_PATH) : null;
+    const publicUrl =
+      APP_URL ||
+      (req.get("x-forwarded-proto") && req.get("host")
+        ? `${req.get("x-forwarded-proto")}://${req.get("host")}`
+        : null);
     res.json({
       status: "ok",
       dbState: health.connected ? "connected" : "missing",
       dbMode: health.mode,
       dbPath: path.basename(DB_PATH),
+      publicUrl,
       ...(stats ? { counts: stats } : {}),
     });
   });
@@ -288,6 +303,7 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
     console.log(`Database: ${DB_PATH} (${isSqlitePath(DB_PATH) ? "SQLite" : "JSON"})`);
+    if (APP_URL) console.log(`Public URL: ${APP_URL}`);
   });
 }
 
