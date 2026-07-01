@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'revenue' | 'monitoring'>('revenue');
   
   const [servers, setServers] = useState<any[]>([]);
+  const [serverStats, setServerStats] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalIncome: 0,
     successfulSales: 0,
@@ -67,6 +68,30 @@ export default function Dashboard() {
         setIsLoading(false);
       }
     };
+
+   // هوک دریافت اطلاعات مانیتورینگ (هر ۱۰ ثانیه آپدیت می‌شود)
+  useEffect(() => {
+    const fetchServerStats = async () => {
+      if (activeTab !== 'monitoring') return; 
+      try {
+        const res = await fetch('/api/servers/stats');
+        const data = await res.json();
+        if (data.success) {
+          setServerStats(data.stats);
+        }
+      } catch (err) {
+        console.error("خطا در دریافت وضعیت سرورها:", err);
+      }
+    };
+
+    if (activeTab === 'monitoring') {
+      fetchServerStats();
+    }
+
+    const interval = setInterval(fetchServerStats, 10000); // 10000 میلی‌ثانیه
+    return () => clearInterval(interval);
+  }, [activeTab]); 
+
 
     fetchDashboardData();
   }, []);
@@ -167,22 +192,72 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
+            ) : (
             <div className="lg:col-span-2 glass-panel rounded-2xl p-6 flex flex-col gap-6 border border-outline-variant/30">
-              <h2 className="font-label-lg text-on-surface font-medium">وضعیت لحظه‌ای سرورها</h2>
-              {servers.length === 0 ? (
-                <p className="text-on-surface-variant text-center py-10">هیچ سروری ثبت نشده است.</p>
+              <div className="flex justify-between items-center">
+                <h2 className="font-label-lg text-on-surface font-medium">وضعیت لحظه‌ای سرورها</h2>
+                <div className="flex items-center gap-2 text-xs text-on-surface-variant bg-surface-container px-3 py-1.5 rounded-full border border-outline-variant/30">
+                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                  آپدیت خودکار (Live)
+                </div>
+              </div>
+
+              {serverStats.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[40px] mb-3 opacity-50">dns</span>
+                  <p>در حال دریافت اطلاعات از نودها...</p>
+                </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {servers.map(server => (
-                    <div key={server.id} className="p-4 rounded-xl bg-surface-container border border-outline-variant/30 flex justify-between items-center">
-                      <div>
-                        <p className="text-on-surface font-bold truncate max-w-[150px]">{server.name}</p>
-                        <p className="text-xs text-on-surface-variant mt-1 font-mono truncate max-w-[150px]" dir="ltr">{server.domain || server.panelUrl}</p>
+                <div className="grid grid-cols-1 gap-4">
+                  {serverStats.map(server => (
+                    <div key={server.id} className="p-4 rounded-xl bg-surface-container border border-outline-variant/30 flex flex-col md:flex-row justify-between gap-4">
+                      
+                      {/* مشخصات سرور */}
+                      <div className="flex items-center gap-3 md:w-1/3">
+                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${server.status === 'قطعی ارتباط' ? 'bg-error/10 text-error border-error/20' : 'bg-primary/10 text-primary border-primary/20'}`}>
+                           <span className="material-symbols-outlined text-[20px]">{server.status === 'قطعی ارتباط' ? 'wifi_off' : 'dns'}</span>
+                         </div>
+                         <div className="overflow-hidden">
+                           <p className="text-on-surface font-bold text-sm truncate">{server.name}</p>
+                           <p className="text-[11px] text-on-surface-variant mt-0.5 font-mono truncate" dir="ltr">{server.domain}</p>
+                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${server.status === 'VIP' ? 'bg-amber-500' : server.status === 'در حال تخلیه' ? 'bg-error' : 'bg-primary'} animate-pulse`}></span>
-                        <span className="text-sm text-on-surface-variant">{server.status || 'فعال'}</span>
+
+                      {/* منابع سرور (CPU و RAM) */}
+                      <div className="flex-1 grid grid-cols-2 gap-4 items-center px-0 md:px-4 md:border-x border-outline-variant/30">
+                        <div className="flex flex-col gap-1.5 w-full">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-on-surface-variant">CPU</span>
+                            <span className={`font-mono font-bold ${server.cpu > 80 ? 'text-error' : 'text-on-surface'}`}>{server.cpu}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden flex" dir="ltr">
+                            <div className={`h-full rounded-full transition-all duration-1000 ${server.cpu > 80 ? 'bg-error' : 'bg-primary'}`} style={{ width: `${server.cpu}%` }}></div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-col gap-1.5 w-full">
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-on-surface-variant">RAM</span>
+                            <span className={`font-mono font-bold ${server.ram > 80 ? 'text-error' : 'text-on-surface'}`}>{server.ram}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden flex" dir="ltr">
+                            <div className={`h-full rounded-full transition-all duration-1000 ${server.ram > 80 ? 'bg-error' : 'bg-primary'}`} style={{ width: `${server.ram}%` }}></div>
+                          </div>
+                        </div>
                       </div>
+
+                      {/* اطلاعات تکمیلی */}
+                      <div className="flex items-center justify-between md:justify-end gap-6 md:w-1/4">
+                         <div className="text-center md:text-right">
+                           <p className="text-[10px] text-on-surface-variant mb-1">آپتایم</p>
+                           <p className="text-xs font-bold text-on-surface font-mono">{server.uptime}</p>
+                         </div>
+                         <div className="text-center md:text-right">
+                           <p className="text-[10px] text-on-surface-variant mb-1">آنلاین</p>
+                           <p className="text-xs font-bold text-primary font-mono">{server.onlineUsers} 👤</p>
+                         </div>
+                      </div>
+
                     </div>
                   ))}
                 </div>

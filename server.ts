@@ -212,6 +212,50 @@ async function startServer() {
     }
   });
 
+  // مانیتورینگ لحظه‌ای سرورها (دریافت وضعیت CPU، RAM و...)
+app.get("/api/servers/stats", async (req, res) => {
+  try {
+    const servers = await query("SELECT * FROM servers");
+    
+    // اینجا برای هر سرور یک درخواست به API پنل آن می‌فرستیم
+    const statsPromises = servers.map(async (server) => {
+      try {
+        /*
+          محل قرارگیری کد اصلی شما در آینده:
+          const response = await fetch(`${server.panel_url}/api/status`, { 
+             headers: { 'Authorization': `Bearer ${server.api_token}` }
+          });
+          const data = await response.json();
+          return { id: server.id, name: server.name, cpu: data.cpu, ... }
+        */
+
+        // دیتای شبیه‌سازی شده برای تست ظاهر (بعد از اتصال به API واقعی این بخش را پاک کنید)
+        const fakeCpu = Math.floor(Math.random() * 40) + 10;
+        const fakeRam = Math.floor(Math.random() * 60) + 20;
+        
+        return {
+          id: server.id,
+          name: server.name,
+          status: server.status || 'فعال',
+          domain: server.domain || server.panel_url,
+          cpu: fakeCpu,
+          ram: fakeRam,
+          uptime: "۱۲ روز و ۴ ساعت",
+          onlineUsers: Math.floor(Math.random() * 200) + 50
+        };
+      } catch (err) {
+         return { id: server.id, name: server.name, status: 'قطعی ارتباط', domain: server.panel_url, cpu: 0, ram: 0, uptime: '-', onlineUsers: 0 };
+      }
+    });
+
+    const serversStats = await Promise.all(statsPromises);
+    res.json({ success: true, stats: serversStats });
+
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
   app.post("/api/servers", (req, res) => {
     try {
       const server = createServer(DB_PATH, req.body);
