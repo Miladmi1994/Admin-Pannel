@@ -71,9 +71,9 @@ export default function Dashboard() {
         setIsLoading(false);
       }
     };
+
     fetchDashboardData();
   }, []); // <--- اینجا هوک اول به درستی بسته شد
-klajdjasdj
 
 
   // ----------------------------------------------------
