@@ -30,6 +30,11 @@ import {
 
 dotenv.config();
 
+const APP_ENV = (process.env.APP_ENV || process.env.NODE_ENV || "development").toLowerCase();
+const isProduction = APP_ENV === "production";
+const isStaging = APP_ENV === "staging";
+const isDeployed = isProduction || isStaging;
+
 const DB_PATH = process.env.DB_PATH || "/root/telbot-test/telbot.db";
 const APP_URL = (process.env.APP_URL || "").replace(/\/$/, "");
 const otpStorage = new Map<string, { code: string; expiresAt: number }>();
@@ -47,11 +52,16 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-  if (process.env.NODE_ENV === "production") {
+  if (isProduction) {
     app.set("trust proxy", 1);
   }
 
-  if (APP_URL) {
+  app.use((_req, res, next) => {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet, noimageindex");
+    next();
+  });
+
+  if (isProduction && APP_URL) {
     app.use(cors({ origin: [APP_URL, `http://localhost:${PORT}`], credentials: true }));
   } else {
     app.use(cors());
@@ -68,6 +78,7 @@ async function startServer() {
         : null);
     res.json({
       status: "ok",
+      environment: APP_ENV,
       dbState: health.connected ? "connected" : "missing",
       dbMode: health.mode,
       dbPath: path.basename(DB_PATH),
@@ -286,24 +297,28 @@ async function startServer() {
     }
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (isDeployed) {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("/robots.txt", (_req, res) => {
+      res.type("text/plain").send("User-agent: *\nDisallow: /\n");
+    });
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  } else {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT} (${APP_ENV})`);
     console.log(`Database: ${DB_PATH} (${isSqlitePath(DB_PATH) ? "SQLite" : "JSON"})`);
-    if (APP_URL) console.log(`Public URL: ${APP_URL}`);
+    if (isProduction && APP_URL) console.log(`Public URL: ${APP_URL}`);
+    else if (isStaging) console.log(`Staging: direct access on port ${PORT} (no domain)`);
   });
 }
 

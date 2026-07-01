@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Staging deploy — develop branch → /root/admin-pannel-test/Admin-Pannel/
-# Access: http://<server-ip>:3000  (no domain, no nginx)
+# Manual production deploy only (no GitHub Actions).
+# Run on the server: bash /root/admin-pannel/Admin-Pannel/scripts/deploy-production.sh
+# Access: https://admin.crrc.ir (nginx → port 3001)
 set -euo pipefail
 
-APP_DIR="/root/admin-pannel-test/Admin-Pannel"
-PM2_NAME="admin-pannel-test"
-BRANCH="develop"
+APP_DIR="/root/admin-pannel/Admin-Pannel"
+PM2_NAME="admin-pannel"
+BRANCH="main"
 
 if [ ! -d "$APP_DIR/.git" ]; then
   echo "ERROR: $APP_DIR is not a git repo. Run one-time server setup first."
@@ -25,8 +26,8 @@ npm install
 echo "==> Building frontend + server..."
 npm run build
 
-echo "==> Restarting PM2 process (staging)..."
-export APP_ENV=staging
+echo "==> Restarting PM2 process (production)..."
+export APP_ENV=production
 
 if pm2 describe "$PM2_NAME" > /dev/null 2>&1; then
   pm2 restart "$PM2_NAME" --update-env
@@ -36,11 +37,11 @@ fi
 
 pm2 save
 
-echo "==> Staging deploy complete."
-echo "    URL:  http://<server-ip>:3000"
+echo "==> Production deploy complete."
+echo "    URL:  https://admin.crrc.ir"
 echo "    Ensure $APP_DIR/.env has:"
-echo "      APP_ENV=staging"
-echo "      PORT=3000"
-echo "      DB_PATH=/root/telbot-test/telbot.db"
-echo "      (do NOT set APP_URL on staging)"
+echo "      APP_ENV=production"
+echo "      PORT=3001"
+echo "      APP_URL=https://admin.crrc.ir"
+echo "      DB_PATH=/root/telbot/telbot.db"
 pm2 status "$PM2_NAME"
