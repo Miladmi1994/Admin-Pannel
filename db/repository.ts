@@ -35,6 +35,34 @@ function writeJsonDb(dbPath: string, data: unknown) {
   fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), "utf8");
 }
 
+/** Normalize Telegram IDs for reliable comparison (handles whitespace, number types). */
+export function normalizeTelegramId(id: string | number | undefined | null): string {
+  if (id == null) return "";
+  const raw = String(id).trim();
+  const digits = raw.replace(/\D/g, "");
+  return digits || raw;
+}
+
+function getEnvAdminIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const source of [process.env.ADMIN_ID, process.env.ADMIN_IDS]) {
+    if (!source) continue;
+    for (const part of source.split(/[,;\s]+/)) {
+      const normalized = normalizeTelegramId(part);
+      if (normalized) ids.add(normalized);
+    }
+  }
+  return ids;
+}
+
+function isAdminInDb(db: SqliteDb, telegramId: string): boolean {
+  const id = normalizeTelegramId(telegramId);
+  if (!id) return false;
+
+  const rows = db.prepare("SELECT telegram_id FROM admins").all() as { telegram_id: string }[];
+  return rows.some((row) => normalizeTelegramId(row.telegram_id) === id);
+}
+
 // --- SQLite repository ---
 
 function getActiveVipServerId(db: SqliteDb): string | null {
@@ -54,17 +82,28 @@ export function getHealth(dbPath: string) {
 }
 
 export function isAdmin(dbPath: string, telegramId: string): boolean {
+  const id = normalizeTelegramId(telegramId);
+  if (!id) return false;
+
+  if (getEnvAdminIds().has(id)) return true;
+
   if (!isSqlitePath(dbPath)) {
     const db = readJsonDb(dbPath);
-    const user = db.users?.[telegramId];
+
+    if (Array.isArray(db.admins)) {
+      const found = db.admins.some(
+        (a: { id?: string | number; telegramId?: string | number }) =>
+          normalizeTelegramId(a.id ?? a.telegramId) === id
+      );
+      if (found) return true;
+    }
+
+    const user = db.users?.[id] ?? db.users?.[telegramId];
     return Boolean(user?.isAdmin);
   }
 
   const db = openDatabase(dbPath);
-  const row = db
-    .prepare("SELECT 1 FROM admins WHERE telegram_id = ?")
-    .get(String(telegramId));
-  return Boolean(row);
+  return isAdminInDb(db, id);
 }
 
 export function getSettings(dbPath: string) {
@@ -210,9 +249,10 @@ export function getUsers(dbPath: string) {
   const db = openDatabase(dbPath);
   const adminIds = new Set(
     (db.prepare("SELECT telegram_id FROM admins").all() as { telegram_id: string }[]).map(
-      (r) => r.telegram_id
+      (r) => normalizeTelegramId(r.telegram_id)
     )
   );
+  for (const envId of getEnvAdminIds()) adminIds.add(envId);
 
   const userRows = db
     .prepare(`
@@ -245,13 +285,13 @@ export function getUsers(dbPath: string) {
   }
 
   return userRows.map((row) => {
-    const tid = String(row.telegram_id);
+    const tid = normalizeTelegramId(String(row.telegram_id));
     const stats = db
       .prepare("SELECT * FROM user_stats WHERE telegram_id = ?")
-      .get(tid) as Record<string, unknown> | undefined;
+      .get(String(row.telegram_id)) as Record<string, unknown> | undefined;
     return {
       ...rowToUser(row, adminIds.has(tid), stats),
-      configs: servicesByUser.get(tid) ?? [],
+      configs: servicesByUser.get(String(row.telegram_id)) ?? servicesByUser.get(tid) ?? [],
     };
   });
 }
@@ -284,9 +324,7 @@ export function setUserBanned(dbPath: string, userId: string, isBanned: boolean)
     | undefined;
   if (!row) return null;
 
-  const isAdminUser = Boolean(
-    db.prepare("SELECT 1 FROM admins WHERE telegram_id = ?").get(userId)
-  );
+  const isAdminUser = isAdminInDb(db, userId) || getEnvAdminIds().has(normalizeTelegramId(userId));
   return rowToUser(row, isAdminUser);
 }
 
@@ -335,9 +373,7 @@ export function setUserVip(dbPath: string, userId: string, isVip: boolean) {
     | undefined;
   if (!row) return null;
 
-  const isAdminUser = Boolean(
-    db.prepare("SELECT 1 FROM admins WHERE telegram_id = ?").get(userId)
-  );
+  const isAdminUser = isAdminInDb(db, userId) || getEnvAdminIds().has(normalizeTelegramId(userId));
   return rowToUser(row, isAdminUser);
 }
 
@@ -594,25 +630,45 @@ export function resetFinanceStats(dbPath: string) {
 }
 
 export function getAdmins(dbPath: string) {
+  let admins: { id: string; name: string; role: string }[] = [];
+
   if (!isSqlitePath(dbPath)) {
     const db = readJsonDb(dbPath);
-    return Object.values(db.admins || {}).map((a: any) => ({
-      id: String(a.id ?? a.telegramId),
-      name: a.name ?? "",
+    if (Array.isArray(db.admins)) {
+      admins = db.admins.map((a: { id?: string | number; telegramId?: string | number; name?: string }, index: number) => ({
+        id: normalizeTelegramId(a.id ?? a.telegramId),
+        name: a.name ?? "",
+        role: index === 0 ? "Super Admin" : "Admin",
+      }));
+    } else {
+      admins = Object.values(db.admins || {}).map((a: any, index: number) => ({
+        id: normalizeTelegramId(a.id ?? a.telegramId),
+        name: a.name ?? "",
+        role: index === 0 ? "Super Admin" : "Admin",
+      }));
+    }
+  } else {
+    const db = openDatabase(dbPath);
+    admins = (
+      db.prepare("SELECT telegram_id, name FROM admins ORDER BY telegram_id ASC").all() as {
+        telegram_id: string;
+        name: string;
+      }[]
+    ).map((row, index) => ({
+      id: normalizeTelegramId(row.telegram_id),
+      name: row.name,
+      role: index === 0 ? "Super Admin" : "Admin",
     }));
   }
 
-  const db = openDatabase(dbPath);
-  return (
-    db.prepare("SELECT telegram_id, name FROM admins ORDER BY telegram_id ASC").all() as {
-      telegram_id: string;
-      name: string;
-    }[]
-  ).map((row, index) => ({
-    id: row.telegram_id,
-    name: row.name,
-    role: index === 0 ? "Super Admin" : "Admin",
-  }));
+  const known = new Set(admins.map((a) => a.id));
+  for (const envId of getEnvAdminIds()) {
+    if (!known.has(envId)) {
+      admins.unshift({ id: envId, name: "ادمین (.env)", role: "Super Admin" });
+    }
+  }
+
+  return admins;
 }
 
 export function createAdmin(dbPath: string, telegramId: string, name: string) {

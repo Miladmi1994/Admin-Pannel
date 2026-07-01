@@ -73,7 +73,8 @@ async function startServer() {
       }
 
       const code = Math.floor(10000 + Math.random() * 90000).toString();
-      otpStorage.set(String(telegramId), { code, expiresAt: Date.now() + 5 * 60 * 1000 });
+      const chatId = String(telegramId).trim();
+      otpStorage.set(chatId, { code, expiresAt: Date.now() + 5 * 60 * 1000 });
 
       const botToken = process.env.BOT_TOKEN;
       if (botToken) {
@@ -81,7 +82,7 @@ async function startServer() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            chat_id: telegramId,
+            chat_id: chatId,
             text: `🔐 <b>کد ورود به پنل مدیریت سایت:</b>\n\n<code>${code}</code>\n\n⏳ این کد فقط ۵ دقیقه اعتبار دارد.`,
             parse_mode: "HTML",
           }),
