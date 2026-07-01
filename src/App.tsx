@@ -16,8 +16,15 @@ import Marketing from './pages/Marketing';
 import Admins from './pages/Admins';
 
 export default function App() {
-  // Start unauthenticated so user can see the login flow per prompt instructions
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => !!localStorage.getItem('adminToken')
+  );
+
+  const handleLogout = () => {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminTelegramId');
+    setIsAuthenticated(false);
+  };
 
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
@@ -26,7 +33,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Layout onLogout={() => setIsAuthenticated(false)} />}>
+        <Route path="/" element={<Layout onLogout={handleLogout} />}>
           <Route index element={<Dashboard />} />
           <Route path="servers" element={<Servers />} />
           <Route path="plans" element={<Plans />} />
