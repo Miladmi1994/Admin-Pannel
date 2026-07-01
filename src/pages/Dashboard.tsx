@@ -21,19 +21,32 @@ export default function Dashboard() {
     activeConfigs: 0,
     abandonedCarts: 0
   });
+  const [dbHealth, setDbHealth] = useState<{ mode: string; connected: boolean; counts?: Record<string, number> }>({
+    mode: 'unknown',
+    connected: false,
+  });
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         setIsLoading(true);
         
-        // دریافت تنظیمات و آمار مالی
-        const resSettings = await fetch('/api/settings');
+        const [resSettings, resUsers, resHealth] = await Promise.all([
+          fetch('/api/settings'),
+          fetch('/api/users'),
+          fetch('/api/health'),
+        ]);
         const dataSettings = await resSettings.json();
-        
-        // دریافت کاربران برای شمارش کانفیگ‌های فعال
-        const resUsers = await fetch('/api/users');
         const dataUsers = await resUsers.json();
+        const dataHealth = await resHealth.json();
+
+        if (dataHealth.dbMode) {
+          setDbHealth({
+            mode: dataHealth.dbMode,
+            connected: dataHealth.dbState === 'connected',
+            counts: dataHealth.counts,
+          });
+        }
 
         let configsCount = 0;
         if (dataUsers.success) {
@@ -149,7 +162,16 @@ export default function Dashboard() {
             <div className="flex flex-col gap-4">
                <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30">
                   <p className="text-sm text-on-surface-variant">ارتباط با دیتابیس:</p>
-                  <p className="text-primary font-bold mt-1">متصل (telbot.db)</p>
+                  <p className={`font-bold mt-1 ${dbHealth.connected ? 'text-primary' : 'text-error'}`}>
+                    {dbHealth.connected
+                      ? `متصل (${dbHealth.mode === 'sqlite' ? 'SQLite' : 'JSON'})`
+                      : 'قطع / فایل یافت نشد'}
+                  </p>
+                  {dbHealth.counts && (
+                    <p className="text-xs text-on-surface-variant mt-2 font-mono" dir="ltr">
+                      users: {dbHealth.counts.users} · services: {dbHealth.counts.services} · plans: {dbHealth.counts.plans}
+                    </p>
+                  )}
                </div>
                <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30">
                   <p className="text-sm text-on-surface-variant">آی‌پی سرور بک‌اند:</p>
