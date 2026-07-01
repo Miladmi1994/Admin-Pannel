@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="/root/telbot-admin"
+PM2_NAME="telbot-admin"
+BRANCH="develop"
+
+cd "$APP_DIR"
+
+echo "==> Fetching latest $BRANCH..."
+git fetch origin
+git checkout "$BRANCH"
+git reset --hard "origin/$BRANCH"
+
+echo "==> Installing dependencies..."
+npm install
+
+echo "==> Building frontend + server..."
+npm run build
+
+echo "==> Restarting PM2 process..."
+export NODE_ENV=production
+
+if pm2 describe "$PM2_NAME" > /dev/null 2>&1; then
+  pm2 restart "$PM2_NAME" --update-env
+else
+  pm2 start dist/server.cjs --name "$PM2_NAME"
+fi
+
+pm2 save
+
+echo "==> Deploy complete."
+pm2 status "$PM2_NAME"
