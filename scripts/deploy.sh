@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/root/telbot-admin"
-PM2_NAME="telbot-admin"
+APP_DIR="/root/admin-pannel-test/Admin-Pannel/"
+PM2_NAME="admin-pannel-test"
 BRANCH="develop"
 
 cd "$APP_DIR"
