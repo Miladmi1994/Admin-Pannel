@@ -27,6 +27,9 @@ export default function Dashboard() {
     abandonedCarts: 0
   });
 
+  // ----------------------------------------------------
+  // هوک اول: دریافت اطلاعات اولیه داشبورد (فقط یک‌بار اجرا می‌شود)
+  // ----------------------------------------------------
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -59,7 +62,7 @@ export default function Dashboard() {
           });
         }
         
-       if (dataServers.success) {
+        if (dataServers.success) {
           setServers(Array.isArray(dataServers.servers) ? dataServers.servers : []);
         }
       } catch (err) {
@@ -69,16 +72,22 @@ export default function Dashboard() {
       }
     };
 
-   // هوک دریافت اطلاعات مانیتورینگ (هر ۱۰ ثانیه آپدیت می‌شود)
+    fetchDashboardData();
+  }, []); // <--- اینجا هوک اول به درستی بسته شد
+
+
+  // ----------------------------------------------------
+  // هوک دوم: دریافت اطلاعات مانیتورینگ (هر ۱۰ ثانیه آپدیت می‌شود)
+  // ----------------------------------------------------
   useEffect(() => {
     const fetchServerStats = async () => {
       if (activeTab !== 'monitoring') return; 
       try {
         const res = await fetch('/api/servers/stats');
         const data = await res.json();
-       if (data.success) {
-        setServerStats(Array.isArray(data.stats) ? data.stats : []);
-      }
+        if (data.success) {
+          setServerStats(Array.isArray(data.stats) ? data.stats : []);
+        }
       } catch (err) {
         console.error("خطا در دریافت وضعیت سرورها:", err);
       }
@@ -90,15 +99,15 @@ export default function Dashboard() {
 
     const interval = setInterval(fetchServerStats, 10000); // 10000 میلی‌ثانیه
     return () => clearInterval(interval);
-  }, [activeTab]); 
+  }, [activeTab]);
 
 
-    fetchDashboardData();
-  }, []);
-
+  // تابع فرمت قیمت
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('fa-IR').format(price);
   };
+
+  // ... (ادامه کد از کلمه return به بعد بدون تغییر باقی می‌ماند)
 
   return (
     <div className="flex-1 flex flex-col max-w-7xl mx-auto w-full pb-10">
