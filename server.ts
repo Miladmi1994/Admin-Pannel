@@ -22,6 +22,10 @@ import {
   getDbStats,
   getFinance,
   resetFinanceStats,
+  getAdmins,
+  createAdmin,
+  deleteAdmin,
+  getMarketing,
 } from "./db/repository.js";
 
 dotenv.config();
@@ -223,6 +227,44 @@ async function startServer() {
     try {
       const finance = resetFinanceStats(DB_PATH);
       res.json({ success: true, finance });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.get("/api/admins", (req, res) => {
+    try {
+      res.json({ success: true, admins: getAdmins(DB_PATH) });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/admins", (req, res) => {
+    try {
+      const { telegramId, name } = req.body;
+      const admin = createAdmin(DB_PATH, telegramId, name);
+      res.json({ success: true, admin });
+    } catch (err: any) {
+      res.status(400).json({ success: false, message: err.message });
+    }
+  });
+
+  app.delete("/api/admins/:id", (req, res) => {
+    try {
+      const deleted = deleteAdmin(DB_PATH, req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ success: false, message: "Admin not found" });
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(400).json({ success: false, message: err.message });
+    }
+  });
+
+  app.get("/api/marketing", (req, res) => {
+    try {
+      res.json({ success: true, marketing: getMarketing(DB_PATH) });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }

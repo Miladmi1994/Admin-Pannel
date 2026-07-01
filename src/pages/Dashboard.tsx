@@ -2,19 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { AreaChart, Area, ResponsiveContainer, Tooltip } from 'recharts';
 
-// داده‌های تستی نمودار (در آینده می‌توانید لاگ‌های واقعی را جایگزین کنید)
-const mockChartData = [
-  { name: '1', uv: 4000 },
-  { name: '2', uv: 3000 },
-  { name: '3', uv: 5000 },
-  { name: '4', uv: 2780 },
-  { name: '5', uv: 6890 },
-  { name: '6', uv: 2390 },
-  { name: '7', uv: 4490 },
-];
-
 export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
+  const [chartData, setChartData] = useState<{ name: string; uv: number }[]>([]);
   const [stats, setStats] = useState({
     totalIncome: 0,
     successfulSales: 0,
@@ -31,14 +21,16 @@ export default function Dashboard() {
       try {
         setIsLoading(true);
         
-        const [resSettings, resUsers, resHealth] = await Promise.all([
+        const [resSettings, resUsers, resHealth, resMarketing] = await Promise.all([
           fetch('/api/settings'),
           fetch('/api/users'),
           fetch('/api/health'),
+          fetch('/api/marketing'),
         ]);
         const dataSettings = await resSettings.json();
         const dataUsers = await resUsers.json();
         const dataHealth = await resHealth.json();
+        const dataMarketing = await resMarketing.json();
 
         if (dataHealth.dbMode) {
           setDbHealth({
@@ -62,6 +54,15 @@ export default function Dashboard() {
             activeConfigs: configsCount,
             abandonedCarts: dataSettings.settings.abandonedCarts || 0
           });
+        }
+
+        if (dataMarketing.success && dataMarketing.marketing.topPlans?.length) {
+          setChartData(
+            dataMarketing.marketing.topPlans.slice(0, 7).map((p: any) => ({
+              name: p.name.length > 12 ? p.name.slice(0, 12) + '…' : p.name,
+              uv: p.sold,
+            }))
+          );
         }
       } catch (err) {
         console.error("خطا در دریافت اطلاعات داشبورد:", err);
@@ -142,8 +143,11 @@ export default function Dashboard() {
             </div>
             
             <div className="w-full h-72 relative flex items-end px-2 pb-6" dir="ltr">
+              {chartData.length === 0 ? (
+                <p className="text-on-surface-variant w-full text-center self-center">داده فروش برای نمودار موجود نیست.</p>
+              ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mockChartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#4edea3" stopOpacity={0.15}/>
@@ -154,6 +158,7 @@ export default function Dashboard() {
                   <Area type="monotone" dataKey="uv" stroke="#4edea3" strokeWidth={2} fillOpacity={1} fill="url(#colorUv)" />
                 </AreaChart>
               </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -174,8 +179,8 @@ export default function Dashboard() {
                   )}
                </div>
                <div className="p-4 rounded-xl bg-surface-container border border-outline-variant/30">
-                  <p className="text-sm text-on-surface-variant">آی‌پی سرور بک‌اند:</p>
-                  <p className="text-on-surface font-mono mt-1" dir="ltr">127.0.0.1:3000</p>
+                  <p className="text-sm text-on-surface-variant">آدرس پنل:</p>
+                  <p className="text-on-surface font-mono mt-1 text-sm" dir="ltr">{typeof window !== 'undefined' ? window.location.host : '—'}</p>
                </div>
             </div>
           </div>

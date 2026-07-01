@@ -592,3 +592,152 @@ export function resetFinanceStats(dbPath: string) {
 
   return getFinance(dbPath);
 }
+
+export function getAdmins(dbPath: string) {
+  if (!isSqlitePath(dbPath)) {
+    const db = readJsonDb(dbPath);
+    return Object.values(db.admins || {}).map((a: any) => ({
+      id: String(a.id ?? a.telegramId),
+      name: a.name ?? "",
+    }));
+  }
+
+  const db = openDatabase(dbPath);
+  return (
+    db.prepare("SELECT telegram_id, name FROM admins ORDER BY telegram_id ASC").all() as {
+      telegram_id: string;
+      name: string;
+    }[]
+  ).map((row, index) => ({
+    id: row.telegram_id,
+    name: row.name,
+    role: index === 0 ? "Super Admin" : "Admin",
+  }));
+}
+
+export function createAdmin(dbPath: string, telegramId: string, name: string) {
+  const id = String(telegramId).trim();
+  const adminName = String(name).trim();
+  if (!id || !adminName) throw new Error("telegramId and name are required");
+
+  if (!isSqlitePath(dbPath)) {
+    const db = readJsonDb(dbPath);
+    if (!db.admins) db.admins = {};
+    db.admins[id] = { id, name: adminName };
+    writeJsonDb(dbPath, db);
+    return { id, name: adminName, role: "Admin" };
+  }
+
+  const db = openDatabase(dbPath);
+  try {
+    db.prepare("INSERT INTO admins (telegram_id, name) VALUES (?, ?)").run(id, adminName);
+  } catch {
+    throw new Error("این آیدی تلگرام قبلاً ثبت شده است");
+  }
+  const admins = getAdmins(dbPath);
+  return admins.find((a) => a.id === id) ?? { id, name: adminName, role: "Admin" };
+}
+
+export function deleteAdmin(dbPath: string, telegramId: string) {
+  const id = String(telegramId);
+
+  if (!isSqlitePath(dbPath)) {
+    const db = readJsonDb(dbPath);
+    if (!db.admins?.[id]) return false;
+    delete db.admins[id];
+    writeJsonDb(dbPath, db);
+    return true;
+  }
+
+  const db = openDatabase(dbPath);
+  const count = (db.prepare("SELECT COUNT(*) AS c FROM admins").get() as { c: number }).c;
+  if (count <= 1) {
+    throw new Error("Cannot delete the last admin");
+  }
+
+  const result = db.prepare("DELETE FROM admins WHERE telegram_id = ?").run(id);
+  return result.changes > 0;
+}
+
+export function getMarketing(dbPath: string) {
+  if (!isSqlitePath(dbPath)) {
+    return {
+      ltv: 0,
+      loyalCustomers: 0,
+      whales: 0,
+      serverDensity: 0,
+      testToBuyConversion: 0,
+      totalUsers: 0,
+      topPlans: [] as { name: string; sold: number; percent: number }[],
+    };
+  }
+
+  const db = openDatabase(dbPath);
+
+  const ltvRow = db
+    .prepare("SELECT AVG(total_spent) AS avg FROM user_stats WHERE total_spent > 0")
+    .get() as { avg: number | null };
+  const loyalRow = db
+    .prepare("SELECT COUNT(*) AS c FROM user_stats WHERE renew_count >= 3")
+    .get() as { c: number };
+  const whalesRow = db
+    .prepare("SELECT COUNT(*) AS c FROM user_stats WHERE total_spent >= 5000000")
+    .get() as { c: number };
+
+  const densityRow = db
+    .prepare(`
+      WITH per_server AS (
+        SELECT COUNT(*) AS cnt
+        FROM services
+        WHERE deleted_from_panel = 0 AND server_id IS NOT NULL
+        GROUP BY server_id
+      )
+      SELECT
+        COALESCE(AVG(cnt), 0) AS avg_cnt,
+        COALESCE(MAX(cnt), 0) AS max_cnt
+      FROM per_server
+    `)
+    .get() as { avg_cnt: number; max_cnt: number };
+
+  const serverDensity =
+    densityRow.max_cnt > 0
+      ? Math.round((densityRow.avg_cnt / densityRow.max_cnt) * 100)
+      : 0;
+
+  const globalRow = db.prepare("SELECT test_to_buy_conversion FROM global_stats WHERE id = 1").get() as
+    | { test_to_buy_conversion: number }
+    | undefined;
+
+  const totalUsers = (
+    db.prepare(`
+      SELECT COUNT(*) AS c FROM (
+        SELECT telegram_id FROM users
+        UNION
+        SELECT DISTINCT telegram_id FROM services
+        UNION
+        SELECT telegram_id FROM user_stats
+      )
+    `).get() as { c: number }
+  ).c;
+
+  const planRows = db
+    .prepare("SELECT name, sold FROM plans ORDER BY sold DESC, sort_order ASC LIMIT 10")
+    .all() as { name: string; sold: number }[];
+
+  const totalSold = planRows.reduce((sum, p) => sum + (p.sold || 0), 0);
+  const topPlans = planRows.map((p) => ({
+    name: p.name,
+    sold: p.sold || 0,
+    percent: totalSold > 0 ? Math.round(((p.sold || 0) / totalSold) * 100) : 0,
+  }));
+
+  return {
+    ltv: Math.round(ltvRow.avg ?? 0),
+    loyalCustomers: loyalRow.c,
+    whales: whalesRow.c,
+    serverDensity,
+    testToBuyConversion: Number(globalRow?.test_to_buy_conversion ?? 0),
+    totalUsers,
+    topPlans,
+  };
+}
