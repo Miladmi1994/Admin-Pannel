@@ -191,7 +191,6 @@ export default function Dashboard() {
                 </ResponsiveContainer>
               </div>
             </div>
-          ) : (
             ) : (
             <div className="lg:col-span-2 glass-panel rounded-2xl p-6 flex flex-col gap-6 border border-outline-variant/30">
               <div className="flex justify-between items-center">
