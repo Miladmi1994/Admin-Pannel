@@ -20,6 +20,8 @@ import {
   updateServer,
   deleteServer,
   getDbStats,
+  getFinance,
+  resetFinanceStats,
 } from "./db/repository.js";
 
 dotenv.config();
@@ -204,6 +206,23 @@ async function startServer() {
     try {
       deleteServer(DB_PATH, req.params.id);
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.get("/api/finance", (req, res) => {
+    try {
+      res.json({ success: true, finance: getFinance(DB_PATH) });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  app.post("/api/finance/reset", (req, res) => {
+    try {
+      const finance = resetFinanceStats(DB_PATH);
+      res.json({ success: true, finance });
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
     }

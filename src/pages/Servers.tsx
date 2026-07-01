@@ -198,7 +198,7 @@ export default function Servers() {
                     <span className="font-label-md text-label-md">کاربران (تخمینی)</span>
                   </div>
                   <span className="font-headline-sm text-headline-sm text-on-surface font-medium mt-1">
-                    <span className="font-mono">--</span>
+                    <span className="font-mono">{server.userCount ?? 0}</span>
                   </span>
                 </div>
                 

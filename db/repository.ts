@@ -220,11 +220,13 @@ export function getUsers(dbPath: string) {
         all_users.telegram_id,
         COALESCE(u.is_banned, 0) AS is_banned,
         COALESCE(u.is_vip, 0) AS is_vip,
-        COALESCE(u.is_test, 0) AS is_test
+        COALESCE(u.has_used_test, 0) AS has_used_test
       FROM (
         SELECT telegram_id FROM users
         UNION
         SELECT DISTINCT telegram_id FROM services
+        UNION
+        SELECT telegram_id FROM user_stats
       ) AS all_users
       LEFT JOIN users u ON u.telegram_id = all_users.telegram_id
       ORDER BY all_users.telegram_id
@@ -270,8 +272,11 @@ export function setUserBanned(dbPath: string, userId: string, isBanned: boolean)
 
   if (result.changes === 0) {
     db.prepare(
-      "INSERT INTO users (telegram_id, is_banned, is_vip, is_test) VALUES (?, ?, 0, 0)"
+      "INSERT INTO users (telegram_id, has_used_test, is_vip, is_banned) VALUES (?, 0, 0, ?)"
     ).run(userId, isBanned ? 1 : 0);
+    db.prepare(
+      "INSERT OR IGNORE INTO user_stats (telegram_id, total_spent, buy_count, renew_count) VALUES (?, 0, 0, 0)"
+    ).run(userId);
   }
 
   const row = db.prepare("SELECT * FROM users WHERE telegram_id = ?").get(userId) as
@@ -308,8 +313,11 @@ export function setUserVip(dbPath: string, userId: string, isVip: boolean) {
 
     if (result.changes === 0) {
       db.prepare(
-        "INSERT INTO users (telegram_id, is_banned, is_vip, is_test) VALUES (?, 0, ?, 0)"
+        "INSERT INTO users (telegram_id, has_used_test, is_vip, is_banned) VALUES (?, 0, ?, 0)"
       ).run(userId, isVip ? 1 : 0);
+      db.prepare(
+        "INSERT OR IGNORE INTO user_stats (telegram_id, total_spent, buy_count, renew_count) VALUES (?, 0, 0, 0)"
+      ).run(userId);
     }
 
     db.prepare("UPDATE services SET is_vip = ? WHERE telegram_id = ?").run(
@@ -345,7 +353,28 @@ export function getServers(dbPath: string) {
     string,
     unknown
   >[];
-  return rows.map((row) => rowToServer(row, activeVipId));
+
+  const countRows = db
+    .prepare(`
+      SELECT
+        server_id,
+        COUNT(*) AS service_count,
+        COUNT(DISTINCT telegram_id) AS user_count
+      FROM services
+      WHERE server_id IS NOT NULL AND deleted_from_panel = 0
+      GROUP BY server_id
+    `)
+    .all() as { server_id: string; service_count: number; user_count: number }[];
+
+  const countsByServer = new Map(
+    countRows.map((r) => [r.server_id, { serviceCount: r.service_count, userCount: r.user_count }])
+  );
+
+  return rows.map((row) => ({
+    ...rowToServer(row, activeVipId),
+    userCount: countsByServer.get(String(row.id))?.userCount ?? 0,
+    serviceCount: countsByServer.get(String(row.id))?.serviceCount ?? 0,
+  }));
 }
 
 export function createServer(dbPath: string, server: Record<string, unknown>) {
@@ -467,10 +496,99 @@ export function getDbStats(dbPath: string) {
   if (!isSqlitePath(dbPath)) return null;
 
   const db = openDatabase(dbPath);
+  const userCount = (
+    db.prepare(`
+      SELECT COUNT(*) AS c FROM (
+        SELECT telegram_id FROM users
+        UNION
+        SELECT DISTINCT telegram_id FROM services
+        UNION
+        SELECT telegram_id FROM user_stats
+      )
+    `).get() as { c: number }
+  ).c;
+
   return {
-    users: (db.prepare("SELECT COUNT(*) AS c FROM users").get() as { c: number }).c,
+    users: userCount,
     services: (db.prepare("SELECT COUNT(*) AS c FROM services").get() as { c: number }).c,
     plans: (db.prepare("SELECT COUNT(*) AS c FROM plans").get() as { c: number }).c,
     servers: (db.prepare("SELECT COUNT(*) AS c FROM servers").get() as { c: number }).c,
   };
+}
+
+export function getFinance(dbPath: string) {
+  if (!isSqlitePath(dbPath)) {
+    const db = readJsonDb(dbPath);
+    return {
+      totalIncome: db.settings?.totalIncome ?? 0,
+      successfulSales: db.settings?.successfulSales ?? 0,
+      abandonedCarts: db.settings?.abandonedCarts ?? 0,
+      payments: [],
+    };
+  }
+
+  const db = openDatabase(dbPath);
+  const stats = db.prepare("SELECT * FROM global_stats WHERE id = 1").get() as
+    | Record<string, unknown>
+    | undefined;
+
+  const payments = db
+    .prepare(`
+      SELECT
+        p.token,
+        p.user_id,
+        p.plan_id,
+        p.type,
+        p.email,
+        p.order_id,
+        pl.name AS plan_name,
+        pl.price AS plan_price
+      FROM payments p
+      LEFT JOIN plans pl ON pl.id = p.plan_id
+      ORDER BY p.rowid DESC
+      LIMIT 50
+    `)
+    .all() as Record<string, unknown>[];
+
+  return {
+    totalIncome: Number(stats?.total_income ?? 0),
+    successfulSales: Number(stats?.successful_sales ?? 0),
+    abandonedCarts: Number(stats?.abandoned_carts ?? 0),
+    payments: payments.map((p) => ({
+      token: p.token,
+      userId: p.user_id,
+      planId: p.plan_id,
+      type: p.type,
+      email: p.email ?? "",
+      orderId: p.order_id ?? "",
+      planName: p.plan_name ?? "—",
+      amount: Number(p.plan_price ?? 0),
+    })),
+  };
+}
+
+export function resetFinanceStats(dbPath: string) {
+  if (!isSqlitePath(dbPath)) {
+    const db = readJsonDb(dbPath);
+    db.settings = {
+      ...db.settings,
+      totalIncome: 0,
+      successfulSales: 0,
+      abandonedCarts: 0,
+    };
+    writeJsonDb(dbPath, db);
+    return getFinance(dbPath);
+  }
+
+  const db = openDatabase(dbPath);
+  db.prepare(`
+    UPDATE global_stats SET
+      total_income = 0,
+      successful_sales = 0,
+      abandoned_carts = 0,
+      test_to_buy_conversion = 0
+    WHERE id = 1
+  `).run();
+
+  return getFinance(dbPath);
 }

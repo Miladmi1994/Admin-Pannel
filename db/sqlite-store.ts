@@ -184,7 +184,7 @@ export function rowToUser(
     telegramId: row.telegram_id,
     isBanned: Boolean(row.is_banned),
     isVip: Boolean(row.is_vip),
-    isTest: Boolean(row.is_test),
+    isTest: Boolean(row.has_used_test ?? row.is_test),
     isAdmin,
     stats: stats
       ? {
