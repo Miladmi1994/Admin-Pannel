@@ -59,8 +59,8 @@ export default function Dashboard() {
           });
         }
         
-        if (dataServers.success) {
-          setServers(dataServers.servers);
+       if (dataServers.success) {
+          setServers(Array.isArray(dataServers.servers) ? dataServers.servers : []);
         }
       } catch (err) {
         console.error("خطا در دریافت اطلاعات داشبورد:", err);
@@ -76,9 +76,9 @@ export default function Dashboard() {
       try {
         const res = await fetch('/api/servers/stats');
         const data = await res.json();
-        if (data.success) {
-          setServerStats(data.stats);
-        }
+       if (data.success) {
+        setServerStats(Array.isArray(data.stats) ? data.stats : []);
+      }
       } catch (err) {
         console.error("خطا در دریافت وضعیت سرورها:", err);
       }
@@ -200,7 +200,7 @@ export default function Dashboard() {
                   آپدیت خودکار (Live)
                 </div>
               </div>
-
+              
               {serverStats.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-on-surface-variant">
                   <span className="material-symbols-outlined text-[40px] mb-3 opacity-50">dns</span>
@@ -208,7 +208,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {serverStats.map(server => (
+                  {serverStats?.map(server => (
                     <div key={server.id} className="p-4 rounded-xl bg-surface-container border border-outline-variant/30 flex flex-col md:flex-row justify-between gap-4">
                       
                       {/* مشخصات سرور */}
