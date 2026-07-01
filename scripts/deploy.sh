@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/root/admin-pannel-test/Admin-Pannel/"
+APP_DIR="/root/admin-pannel-test/Admin-Pannel"
 PM2_NAME="admin-pannel-test"
 BRANCH="develop"
+
+if [ ! -d "$APP_DIR/.git" ]; then
+  echo "ERROR: $APP_DIR is not a git repo. Run one-time server setup first."
+  exit 1
+fi
 
 cd "$APP_DIR"
 
