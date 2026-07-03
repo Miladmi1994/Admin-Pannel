@@ -24,7 +24,7 @@ echo "==> Checking production app on :3001..."
 if ! ss -tlnp 2>/dev/null | grep -q ':3001'; then
   echo "ERROR: Nothing is listening on port 3001."
   echo "       Nginx would still serve staging if you only changed .env on the staging app."
-  echo "       1) Set up production at /root/admin-pannel/Admin-Pannel/"
+  echo "       1) Set up production at /root/Admin-Pannel/"
   echo "       2) .env: APP_ENV=production PORT=3001 APP_URL=https://admin.crrc.ir"
   echo "       3) bash scripts/deploy-production.sh"
   echo "       4) Re-run this script"
