@@ -50,6 +50,54 @@ if (isSqlitePath(DB_PATH)) {
   }
 }
 
+function generateMciConfig(uuid: string, configName: string = "CypherNET💎", server: any = null) {
+  const remark = encodeURIComponent(configName + " 2");
+  const domain = server?.domain || "ns.crrc.ir";
+  const sni = server?.sni || "css.2net.ir";
+  const path = server?.path ? encodeURIComponent(server.path) : "%2FCypher_Net";
+  return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${path}&mode=packet-up#${remark}`;
+}
+
+function generateMtnConfig(uuid: string, configName: string = "CypherNET💎", server: any = null) {
+  const domain = server?.domain || "ns.crrc.ir";
+  const sni = server?.sni || "css.2net.ir";
+  const pathStr = server?.path ? server.path : "/Cypher_Net";
+
+  const config = {
+      "dns": { "servers": ["localhost"] },
+      "inbounds": [{
+          "listen": "127.0.0.1", "port": 10808, "protocol": "socks",
+          "settings": { "auth": "noauth", "udp": true, "userLevel": 8 },
+          "sniffing": { "destOverride": ["http", "tls", "quic"], "enabled": true, "routeOnly": true },
+          "tag": "socks"
+      }],
+      "log": { "loglevel": "warning" },
+      "outbounds": [
+          {
+              "mux": { "concurrency": -1, "enabled": false },
+              "protocol": "vless",
+              "settings": { "vnext": [{ "address": domain, "port": 443, "users": [{ "encryption": "none", "id": uuid, "level": 8 }] }] },
+              "streamSettings": {
+                  "finalmask": {
+                      "tcp": [{ "type": "fragment", "settings": { "delay": "2-4", "length": "20-25", "packets": "tlshello" } }],
+                      "udp": [{ "type": "noise", "settings": { "delay": "10-16", "length": "10-20" } }]
+                  },
+                  "network": "xhttp", "security": "tls",
+                  "sockopt": { "domainStrategy": "UseIP", "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 } },
+                  "tlsSettings": { "allowInsecure": false, "alpn": ["h3", "h2"], "fingerprint": "chrome", "serverName": sni },
+                  "xhttpSettings": { "host": "", "mode": "packet-up", "path": pathStr }
+              },
+              "tag": "proxy"
+          },
+          { "protocol": "freedom", "streamSettings": { "network": "tcp", "sockopt": { "domainStrategy": "UseIP" } }, "tag": "direct" },
+          { "protocol": "blackhole", "settings": { "response": { "type": "http" } }, "tag": "block" }
+      ],
+      "remarks": configName + " 1",
+      "routing": { "domainStrategy": "AsIs", "rules": [{ "network": "udp", "outboundTag": "block", "port": "443", "type": "field" }, { "port": "0-65535", "outboundTag": "proxy", "type": "field" }] }
+  };
+  return JSON.stringify(config);
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -88,6 +136,7 @@ async function startServer() {
       ...(stats ? { counts: stats } : {}),
     });
   });
+  
 
   app.post("/api/auth/request-code", async (req, res) => {
     try {
@@ -206,55 +255,6 @@ async function startServer() {
     }
   });
 
-function generateMciConfig(uuid: string, configName: string = "CypherNET💎", server: any = null) {
-    const remark = encodeURIComponent(configName + " 2");
-    const domain = server?.domain || "ns.crrc.ir";
-    const sni = server?.sni || "css.2net.ir";
-    const path = server?.path ? encodeURIComponent(server.path) : "%2FCypher_Net";
-    
-    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${path}&mode=packet-up#${remark}`;
-  }
-
-  function generateMtnConfig(uuid: string, configName: string = "CypherNET💎", server: any = null) {
-      const domain = server?.domain || "ns.crrc.ir";
-      const sni = server?.sni || "css.2net.ir";
-      const pathStr = server?.path ? server.path : "/Cypher_Net";
-
-      const config = {
-          "dns": { "servers": ["localhost"] },
-          "inbounds": [{
-              "listen": "127.0.0.1", "port": 10808, "protocol": "socks",
-              "settings": { "auth": "noauth", "udp": true, "userLevel": 8 },
-              "sniffing": { "destOverride": ["http", "tls", "quic"], "enabled": true, "routeOnly": true },
-              "tag": "socks"
-          }],
-          "log": { "loglevel": "warning" },
-          "outbounds": [
-              {
-                  "mux": { "concurrency": -1, "enabled": false },
-                  "protocol": "vless",
-                  "settings": { "vnext": [{ "address": domain, "port": 443, "users": [{ "encryption": "none", "id": uuid, "level": 8 }] }] },
-                  "streamSettings": {
-                      "finalmask": {
-                          "tcp": [{ "type": "fragment", "settings": { "delay": "2-4", "length": "20-25", "packets": "tlshello" } }],
-                          "udp": [{ "type": "noise", "settings": { "delay": "10-16", "length": "10-20" } }]
-                      },
-                      "network": "xhttp", "security": "tls",
-                      "sockopt": { "domainStrategy": "UseIP", "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 } },
-                      "tlsSettings": { "allowInsecure": false, "alpn": ["h3", "h2"], "fingerprint": "chrome", "serverName": sni },
-                      "xhttpSettings": { "host": "", "mode": "packet-up", "path": pathStr }
-                  },
-                  "tag": "proxy"
-              },
-              { "protocol": "freedom", "streamSettings": { "network": "tcp", "sockopt": { "domainStrategy": "UseIP" } }, "tag": "direct" },
-              { "protocol": "blackhole", "settings": { "response": { "type": "http" } }, "tag": "block" }
-          ],
-          "remarks": configName + " 1",
-          "routing": { "domainStrategy": "AsIs", "rules": [{ "network": "udp", "outboundTag": "block", "port": "443", "type": "field" }, { "port": "0-65535", "outboundTag": "proxy", "type": "field" }] }
-      };
-
-      return JSON.stringify(config);
-
   app.post("/api/users/:id/configs/:configId/send", async (req, res) => {
     try {
       const { id, configId } = req.params; // configId همان uuid است
@@ -314,7 +314,7 @@ function generateMciConfig(uuid: string, configName: string = "CypherNET💎", s
       res.status(500).json({ success: false, message: err.message });
     }
   });
-  
+
   // اندپوینت تمدید کانفیگ
   app.post("/api/users/:id/configs/:configId/renew", async (req, res) => {
     try {
