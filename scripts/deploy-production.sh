@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Manual production deploy only (no GitHub Actions).
-# Run on the server: bash /root/admin-pannel/Admin-Pannel/scripts/deploy-production.sh
+# Run on the server: bash /root/Admin-Pannel/scripts/deploy-production.sh
 # Access: https://admin.crrc.ir (nginx → port 3001)
 set -euo pipefail
 
-APP_DIR="/root/admin-pannel/Admin-Pannel"
+APP_DIR="/root/Admin-Pannel"
 PM2_NAME="admin-pannel"
 BRANCH="main"
 

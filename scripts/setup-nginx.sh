@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # One-time Nginx + SSL setup for PRODUCTION only (admin.crrc.ir).
 # Staging stays on http://<ip>:3000 — do NOT run this for staging.
-# Run as root: bash /root/admin-pannel/Admin-Pannel/scripts/setup-nginx.sh
+# Run as root: bash /root/Admin-Pannel/scripts/setup-nginx.sh
 set -euo pipefail
 
-APP_DIR="/root/admin-pannel/Admin-Pannel"
+APP_DIR="/root/Admin-Pannel"
 DOMAIN="admin.crrc.ir"
 SSL_CERT="/root/cert.crt"
 SSL_KEY="/root/private.key"
