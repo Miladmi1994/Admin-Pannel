@@ -16,13 +16,10 @@ export default function Users() {
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
   const [isPurchaseSlideOpen, setIsPurchaseSlideOpen] = useState(false);
   const [purchaseOrderId, setPurchaseOrderId] = useState('');
-  const [purchaseDropdownOpen, setPurchaseDropdownOpen] = useState(false);
-  const [selectedPurchasePlan, setSelectedPurchasePlan] = useState('پکیج ۳۰ گیگ - ۱۵۰,۰۰۰ تومان');
   
   const [actionTargetId, setActionTargetId] = useState<string>('');
   const [actionConfigId, setActionConfigId] = useState<string>('');
 
-  // 1. واکشی اطلاعات کاربران از بک‌اند به محض لود شدن صفحه
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
@@ -30,14 +27,12 @@ export default function Users() {
       const data = await res.json();
       
       if (data.success) {
-        // تبدیل ساختار دیتابیس بک‌اند به ساختاری که ظاهر سایت نیاز دارد
         const formattedUsers = data.users.map((u: any) => ({
           id: u.telegramId,
-          username: u.telegramId, // در دیتابیس فعلی یوزرنیم ذخیره نشده، پس آیدی رو نشون میدیم
+          username: u.telegramId, 
           status: u.isBanned ? 'مسدود' : u.isVip ? 'VIP' : 'عادی',
           isActive: !u.isBanned,
           configs: (u.configs || []).map((c: any) => {
-             // محاسبه روزهای باقیمانده از روی timestamp انقضا
              let remainDays = 0;
              if (c.panelStats?.expiry) {
                remainDays = Math.max(0, Math.ceil((c.panelStats.expiry - Date.now()) / (1000 * 60 * 60 * 24)));
@@ -98,7 +93,25 @@ export default function Users() {
     handleAction('تمدید کانفیگ', userId, configId);
   };
 
-  // 2. اجرای عملیات واقعی روی دیتابیس
+  const handleDeleteConfig = (userId: string, configId: string) => {
+    handleAction('حذف کانفیگ', userId, configId);
+  };
+
+  // هندل کردن حذف کانفیگ با دو متد مختلف
+  const executeDeleteConfig = async (mode: 'panel' | 'both') => {
+    try {
+      await fetch(`/api/configs/${actionConfigId}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, userId: actionTargetId })
+      });
+      fetchUsers();
+    } catch (err) {
+      console.error("خطا در حذف کانفیگ:", err);
+    }
+    setIsModalOpen(false);
+  };
+
   const executeAction = async () => {
     try {
       if (modalType === 'مسدود کردن' || modalType === 'رفع مسدودی') {
@@ -115,9 +128,20 @@ export default function Users() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ isVip })
         });
+      } else if (modalType.startsWith('ارسال کانفیگ')) {
+        // فراخوانی API ارسال کانفیگ
+        await fetch(`/api/users/${actionTargetId}/configs/${actionConfigId}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } else if (modalType === 'تمدید کانفیگ') {
+        // فراخوانی API تمدید کانفیگ
+        await fetch(`/api/users/${actionTargetId}/configs/${actionConfigId}/renew`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
       }
       
-      // بعد از اعمال تغییرات، لیست را دوباره از دیتابیس می‌خوانیم
       fetchUsers();
     } catch (err) {
       console.error("خطا در اعمال تغییرات:", err);
@@ -138,6 +162,61 @@ export default function Users() {
     return true; 
   }).filter(user => 
     user.id.includes(searchTerm)
+  );
+
+  // کامپوننت رندر کردن لیست کانفیگ‌ها
+  const renderConfigList = (configs: any[], userId: string) => (
+    <div className="flex flex-col gap-3">
+      {configs.map((conf: any) => (
+        <div key={conf.id} className="bg-surface-container hover:bg-surface-container-high transition-colors p-3 rounded-xl border border-outline-variant/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3 w-full md:w-1/3">
+            <div className="w-10 h-10 rounded-lg bg-surface-variant flex items-center justify-center text-on-surface shrink-0">
+              <span className="material-symbols-outlined text-[20px]">dns</span>
+            </div>
+            <div className="flex flex-col overflow-hidden">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-on-surface text-sm truncate">{conf.name}</span>
+              </div>
+              <span className="text-[11px] text-on-surface-variant truncate font-mono" dir="ltr">{conf.email}</span>
+              <span className="text-[11px] text-primary truncate mt-0.5">{conf.server}</span>
+            </div>
+          </div>
+          
+          <div className="flex-1 min-w-[200px]">
+             <div className="flex justify-between text-xs mb-1.5">
+               <span className="text-on-surface-variant flex gap-1">
+                 مصرف:
+                 {conf.volumeTotal === 0 ? (
+                   <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB</span>
+                 ) : (
+                   <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB / {conf.volumeTotal}GB</span>
+                 )}
+               </span>
+               <span className="text-on-surface-variant font-mono">{conf.timeRemain} روز</span>
+             </div>
+             <div className="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden flex" dir="ltr">
+               {conf.volumeTotal === 0 ? (
+                 <div className="h-full bg-primary rounded-full w-full opacity-50"></div>
+               ) : (
+                 <div className={`h-full rounded-full transition-all ${conf.volumeUsed / conf.volumeTotal > 0.8 ? 'bg-error' : 'bg-primary'}`} style={{ width: `${Math.min(100, (conf.volumeUsed / conf.volumeTotal) * 100)}%` }}></div>
+               )}
+             </div>
+          </div>
+          
+          <div className="flex items-center gap-2 shrink-0 justify-end md:mr-4">
+            <button onClick={() => handleSendConfig(userId, conf.id, '1')} className="w-10 h-10 bg-surface-variant text-on-surface hover:bg-primary/20 hover:text-primary transition-colors rounded-lg flex items-center justify-center border border-transparent hover:border-primary/20" title="ارسال کانفیگ ۱">
+              <span className="font-mono text-sm font-bold">1</span>
+            </button>
+            <button onClick={() => handleRenewConfig(userId, conf.id)} className="w-10 h-10 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors rounded-lg border border-blue-500/20 flex items-center justify-center" title="تمدید کانفیگ">
+              <span className="material-symbols-outlined text-[18px]">autorenew</span>
+            </button>
+            <button onClick={() => handleDeleteConfig(userId, conf.id)} className="w-10 h-10 bg-error/10 text-error hover:bg-error hover:text-white transition-colors rounded-lg border border-error/20 flex items-center justify-center" title="حذف کانفیگ">
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 
   return (
@@ -206,123 +285,106 @@ export default function Users() {
             <p className="text-on-surface-variant text-lg">کاربری با این مشخصات یافت نشد.</p>
           </div>
         ) : (
-          filteredUsers.map((user, i) => (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: i * 0.05 }}
-              key={user.id} 
-              className={`glass-panel rounded-2xl p-4 md:p-6 flex flex-col relative overflow-hidden group border border-outline-variant/30 hover:border-primary/30 hover:shadow-[0_4px_24px_rgba(0,0,0,0.1)] transition-all ${user.status === 'VIP' ? 'border-amber-500/30' : user.status === 'مسدود' ? 'border-error/30' : ''}`}
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <button 
-                    onClick={() => toggleExpand(user.id)}
-                    className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-surface-container-highest hover:bg-surface-variant transition-colors border border-outline-variant/50 cursor-pointer text-on-surface-variant hover:text-primary"
-                  >
-                    <span className="material-symbols-outlined transition-transform duration-300" style={{ transform: expandedUsers.includes(user.id) ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                      {expandedUsers.includes(user.id) ? 'remove' : 'add'}
-                    </span>
-                  </button>
-                  <div className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center border shadow-sm ${user.status === 'VIP' ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' : user.status === 'مسدود' ? 'bg-error/10 border-error/30 text-error' : 'bg-primary/10 border-primary/30 text-primary'}`}>
-                    <span className="material-symbols-outlined text-[24px]">
-                      {user.status === 'VIP' ? 'workspace_premium' : user.status === 'مسدود' ? 'person_off' : 'person'}
-                    </span>
-                  </div>
-                  <div className="flex flex-col justify-center">
-                    <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-3">
-                      <span className="font-mono">{user.id}</span>
-                    </h3>
-                  </div>
-                </div>
+          filteredUsers.map((user, i) => {
+            // تفکیک کانفیگ‌های فعال و منقضی
+            const activeConfigs = (user.configs || []).filter((c: any) => c.timeRemain > 0 && (c.volumeTotal === 0 || c.volumeUsed < c.volumeTotal));
+            const expiredConfigs = (user.configs || []).filter((c: any) => c.timeRemain === 0 || (c.volumeTotal > 0 && c.volumeUsed >= c.volumeTotal));
 
-                <div className="flex items-center gap-2 md:gap-3 justify-start md:justify-end pr-14 md:pr-0">
-                  <button onClick={() => handleToggleVipStatus(user.id, user.status)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer border border-transparent bg-surface-container-highest md:bg-transparent ${user.status === 'VIP' ? 'text-amber-500 bg-amber-500/10 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'text-on-surface-variant hover:text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30'}`} title={user.status === 'VIP' ? 'حذف از VIP' : 'ارتقا به VIP'}>
-                    <span className="material-symbols-outlined text-[20px]">{user.status === 'VIP' ? 'workspace_premium' : 'star_outline'}</span>
-                  </button>
-                  <button onClick={() => handleToggleBlockStatus(user.id, user.status)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors duration-300 cursor-pointer border border-transparent bg-surface-container-highest md:bg-transparent ${user.status === 'مسدود' ? 'text-error bg-error/10 border-error/30' : 'text-primary bg-primary/10 border-primary/30'}`} title={user.status === 'مسدود' ? 'رفع مسدودی' : 'مسدود کردن'}>
-                    <span className="material-symbols-outlined text-[20px]">{user.status === 'مسدود' ? 'person_off' : 'person_check'}</span>
-                  </button>
-                </div>
-              </div>
-
-              <AnimatePresence>
-                {expandedUsers.includes(user.id) && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-4 pt-4 border-t border-outline-variant/30">
-                      <h4 className="font-label-lg text-label-lg text-on-surface mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[20px] text-primary">router</span>
-                        کانفیگ‌های کاربر
-                      </h4>
-                      {user.configs && user.configs.length > 0 ? (
-                        <div className="flex flex-col gap-3">
-                          {user.configs.map((conf: any) => (
-                            <div key={conf.id} className="bg-surface-container hover:bg-surface-container-high transition-colors p-3 rounded-xl border border-outline-variant/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                              <div className="flex items-center gap-3 w-full md:w-1/3">
-                                <div className="w-10 h-10 rounded-lg bg-surface-variant flex items-center justify-center text-on-surface shrink-0">
-                                  <span className="material-symbols-outlined text-[20px]">dns</span>
-                                </div>
-                                <div className="flex flex-col overflow-hidden">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-on-surface text-sm truncate">{conf.name}</span>
-                                  </div>
-                                  <span className="text-[11px] text-on-surface-variant truncate font-mono" dir="ltr">{conf.email}</span>
-                                  <span className="text-[11px] text-primary truncate mt-0.5">{conf.server}</span>
-                                </div>
-                              </div>
-                              
-                              <div className="flex-1 min-w-[200px]">
-                                 <div className="flex justify-between text-xs mb-1.5">
-                                   <span className="text-on-surface-variant flex gap-1">
-                                     مصرف:
-                                     {conf.volumeTotal === 0 ? (
-                                       <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB</span>
-                                     ) : (
-                                       <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB / {conf.volumeTotal}GB</span>
-                                     )}
-                                   </span>
-                                   <span className="text-on-surface-variant font-mono">{conf.timeRemain} روز</span>
-                                 </div>
-                                 <div className="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden flex" dir="ltr">
-                                   {conf.volumeTotal === 0 ? (
-                                     <div className="h-full bg-primary rounded-full w-full opacity-50"></div>
-                                   ) : (
-                                     <div className={`h-full rounded-full transition-all ${conf.volumeUsed / conf.volumeTotal > 0.8 ? 'bg-error' : 'bg-primary'}`} style={{ width: `${Math.min(100, (conf.volumeUsed / conf.volumeTotal) * 100)}%` }}></div>
-                                   )}
-                                 </div>
-                              </div>
-                              
-                              <div className="flex items-center gap-2 shrink-0 justify-end md:mr-4">
-                                <button onClick={() => handleSendConfig(user.id, conf.id, '1')} className="w-10 h-10 bg-surface-variant text-on-surface hover:bg-primary/20 hover:text-primary transition-colors rounded-lg flex items-center justify-center border border-transparent hover:border-primary/20" title="ارسال کانفیگ ۱">
-                                  <span className="font-mono text-sm font-bold">1</span>
-                                </button>
-                                <button onClick={() => handleRenewConfig(user.id, conf.id)} className="w-10 h-10 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors rounded-lg border border-blue-500/20 flex items-center justify-center" title="تمدید کانفیگ">
-                                  <span className="material-symbols-outlined text-[18px]">autorenew</span>
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-6 bg-surface-container rounded-xl border border-outline-variant/30 text-on-surface-variant text-sm">
-                          کاربر هیچ کانفیگی ندارد.
-                        </div>
-                      )}
+            return (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+                key={user.id} 
+                className={`glass-panel rounded-2xl p-4 md:p-6 flex flex-col relative overflow-hidden group border border-outline-variant/30 hover:border-primary/30 hover:shadow-[0_4px_24px_rgba(0,0,0,0.1)] transition-all ${user.status === 'VIP' ? 'border-amber-500/30' : user.status === 'مسدود' ? 'border-error/30' : ''}`}
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <button 
+                      onClick={() => toggleExpand(user.id)}
+                      className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center bg-surface-container-highest hover:bg-surface-variant transition-colors border border-outline-variant/50 cursor-pointer text-on-surface-variant hover:text-primary"
+                    >
+                      <span className="material-symbols-outlined transition-transform duration-300" style={{ transform: expandedUsers.includes(user.id) ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                        {expandedUsers.includes(user.id) ? 'remove' : 'add'}
+                      </span>
+                    </button>
+                    <div className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center border shadow-sm ${user.status === 'VIP' ? 'bg-amber-500/10 border-amber-500/30 text-amber-500' : user.status === 'مسدود' ? 'bg-error/10 border-error/30 text-error' : 'bg-primary/10 border-primary/30 text-primary'}`}>
+                      <span className="material-symbols-outlined text-[24px]">
+                        {user.status === 'VIP' ? 'workspace_premium' : user.status === 'مسدود' ? 'person_off' : 'person'}
+                      </span>
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          ))
+                    <div className="flex flex-col justify-center">
+                      <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-3">
+                        <span className="font-mono">{user.id}</span>
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 md:gap-3 justify-start md:justify-end pr-14 md:pr-0">
+                    <button onClick={() => handleToggleVipStatus(user.id, user.status)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer border border-transparent bg-surface-container-highest md:bg-transparent ${user.status === 'VIP' ? 'text-amber-500 bg-amber-500/10 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.3)]' : 'text-on-surface-variant hover:text-amber-500 hover:bg-amber-500/10 hover:border-amber-500/30'}`} title={user.status === 'VIP' ? 'حذف از VIP' : 'ارتقا به VIP'}>
+                      <span className="material-symbols-outlined text-[20px]">{user.status === 'VIP' ? 'workspace_premium' : 'star_outline'}</span>
+                    </button>
+                    <button onClick={() => handleToggleBlockStatus(user.id, user.status)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors duration-300 cursor-pointer border border-transparent bg-surface-container-highest md:bg-transparent ${user.status === 'مسدود' ? 'text-error bg-error/10 border-error/30' : 'text-primary bg-primary/10 border-primary/30'}`} title={user.status === 'مسدود' ? 'رفع مسدودی' : 'مسدود کردن'}>
+                      <span className="material-symbols-outlined text-[20px]">{user.status === 'مسدود' ? 'person_off' : 'person_check'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {expandedUsers.includes(user.id) && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-4 pt-4 border-t border-outline-variant/30">
+                        <h4 className="font-label-lg text-label-lg text-on-surface mb-4 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[20px] text-primary">router</span>
+                          کانفیگ‌های کاربر
+                        </h4>
+                        
+                        {user.configs && user.configs.length > 0 ? (
+                          <div className="flex flex-col gap-6">
+                            {/* بخش کانفیگ‌های فعال */}
+                            {activeConfigs.length > 0 && (
+                              <div>
+                                <h5 className="text-sm font-bold text-primary mb-3 flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-primary"></span>
+                                  اکانت‌های فعال
+                                </h5>
+                                {renderConfigList(activeConfigs, user.id)}
+                              </div>
+                            )}
+
+                            {/* بخش کانفیگ‌های منقضی شده */}
+                            {expiredConfigs.length > 0 && (
+                              <div>
+                                <h5 className="text-sm font-bold text-error mb-3 flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-error"></span>
+                                  اکانت‌های منقضی شده
+                                </h5>
+                                <div className="opacity-80">
+                                  {renderConfigList(expiredConfigs, user.id)}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-center py-6 bg-surface-container rounded-xl border border-outline-variant/30 text-on-surface-variant text-sm">
+                            کاربر هیچ کانفیگی ندارد.
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })
         )}
       </div>
 
-      {/* مودال‌ها و اسلایدرها مانند قبل بدون تغییر در اینجا قرار دارند */}
       <SlideOver isOpen={isSlideOverOpen} onClose={() => setIsSlideOverOpen(false)} title={<><span className="material-symbols-outlined text-primary">add_circle</span> افزودن کاربر VIP</>}>
          <div className="p-4 text-on-surface-variant">بخش ثبت نام در حال اتصال به API است...</div>
       </SlideOver>
@@ -333,18 +395,36 @@ export default function Users() {
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={<><span className="material-symbols-outlined text-error text-2xl">warning</span> تایید عملیات</>}>
         <div className="text-center w-full">
-          <p className="text-on-surface-variant mb-6 text-right sm:text-center leading-relaxed">
-            آیا از انجام عملیات <span className="font-bold text-primary">"{modalType}"</span> برای این کاربر اطمینان دارید؟
+          <p className="text-on-surface-variant mb-4 text-right sm:text-center leading-relaxed">
+            آیا از انجام عملیات <span className="font-bold text-primary">"{modalType}"</span> اطمینان دارید؟
           </p>
-          <div className="flex justify-end sm:justify-center gap-3 mt-4 w-full">
-            <button onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 border border-outline-variant text-on-surface hover:bg-surface-variant rounded-lg font-label-lg text-label-lg transition-colors cursor-pointer">
-              انصراف
-            </button>
-            <button onClick={executeAction} className="px-5 py-2.5 bg-error text-on-error hover:bg-error-container hover:text-on-error-container rounded-lg font-label-lg text-label-lg transition-colors flex items-center gap-2 cursor-pointer">
-              <span className="material-symbols-outlined text-[20px]">check</span>
-              بله، انجام بده
-            </button>
-          </div>
+          
+          {/* نمایش دکمه‌های متفاوت برای حالت حذف کانفیگ */}
+          {modalType === 'حذف کانفیگ' ? (
+            <div className="flex flex-col gap-3 mt-6 w-full">
+              <button onClick={() => executeDeleteConfig('panel')} className="px-5 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-500 hover:bg-amber-500 hover:text-white rounded-lg font-label-lg transition-colors flex items-center justify-center gap-2 cursor-pointer w-full">
+                <span className="material-symbols-outlined text-[20px]">delete_sweep</span>
+                پاک کردن فقط از پنل
+              </button>
+              <button onClick={() => executeDeleteConfig('both')} className="px-5 py-3 bg-error/10 border border-error/30 text-error hover:bg-error hover:text-white rounded-lg font-label-lg transition-colors flex items-center justify-center gap-2 cursor-pointer w-full">
+                <span className="material-symbols-outlined text-[20px]">delete_forever</span>
+                پاک کردن از دیتابیس و پنل (هردو)
+              </button>
+              <button onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 mt-2 text-on-surface-variant hover:text-on-surface font-label-lg transition-colors cursor-pointer w-full">
+                انصراف
+              </button>
+            </div>
+          ) : (
+            <div className="flex justify-end sm:justify-center gap-3 mt-4 w-full">
+              <button onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 border border-outline-variant text-on-surface hover:bg-surface-variant rounded-lg font-label-lg text-label-lg transition-colors cursor-pointer">
+                انصراف
+              </button>
+              <button onClick={executeAction} className="px-5 py-2.5 bg-error text-on-error hover:bg-error-container hover:text-on-error-container rounded-lg font-label-lg text-label-lg transition-colors flex items-center gap-2 cursor-pointer">
+                <span className="material-symbols-outlined text-[20px]">check</span>
+                بله، انجام بده
+              </button>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

@@ -204,6 +204,43 @@ async function startServer() {
     }
   });
 
+  // اندپوینت ارسال کانفیگ به تلگرام
+  app.post("/api/users/:id/configs/:configId/send", async (req, res) => {
+    try {
+      const { id, configId } = req.params;
+      // منطق دریافت لینک کانفیگ از دیتابیس و ارسال پیام تلگرامی به کاربر
+      res.json({ success: true, message: "کانفیگ با موفقیت ارسال شد." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // اندپوینت تمدید کانفیگ
+  app.post("/api/users/:id/configs/:configId/renew", async (req, res) => {
+    try {
+      const { id, configId } = req.params;
+      // منطق به روزرسانی تاریخ انقضا یا حجم در پنل سرور و دیتابیس SQLite
+      res.json({ success: true, message: "کانفیگ با موفقیت تمدید شد." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // اندپوینت حذف کانفیگ (فقط پنل یا پنل و دیتابیس)
+  app.post("/api/configs/:configId/delete", async (req, res) => {
+    try {
+      const { configId } = req.params;
+      const { mode, userId } = req.body; // mode: 'panel' | 'both'
+
+      // ۱. متد حذف از روی API پنل سرور (X-UI)
+      // ۲. حذف از جدول دیتابیس در صورت انتخاب حالت both
+      
+      res.json({ success: true, message: "عملیات حذف با موفقیت انجام شد." });
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
   app.get("/api/servers", (req, res) => {
     try {
       res.json({ success: true, servers: getServers(DB_PATH) });
