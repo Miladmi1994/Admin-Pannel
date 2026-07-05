@@ -206,10 +206,58 @@ async function startServer() {
     }
   });
 
-  // اندپوینت ارسال کانفیگ به تلگرام
+function generateMciConfig(uuid: string, configName: string = "CypherNET💎", server: any = null) {
+    const remark = encodeURIComponent(configName + " 2");
+    const domain = server?.domain || "ns.crrc.ir";
+    const sni = server?.sni || "css.2net.ir";
+    const path = server?.path ? encodeURIComponent(server.path) : "%2FCypher_Net";
+    
+    return `vless://${uuid}@${domain}:443?encryption=none&security=tls&sni=${sni}&fp=chrome&alpn=h3%2Ch2&insecure=0&allowInsecure=0&type=xhttp&path=${path}&mode=packet-up#${remark}`;
+  }
+
+  function generateMtnConfig(uuid: string, configName: string = "CypherNET💎", server: any = null) {
+      const domain = server?.domain || "ns.crrc.ir";
+      const sni = server?.sni || "css.2net.ir";
+      const pathStr = server?.path ? server.path : "/Cypher_Net";
+
+      const config = {
+          "dns": { "servers": ["localhost"] },
+          "inbounds": [{
+              "listen": "127.0.0.1", "port": 10808, "protocol": "socks",
+              "settings": { "auth": "noauth", "udp": true, "userLevel": 8 },
+              "sniffing": { "destOverride": ["http", "tls", "quic"], "enabled": true, "routeOnly": true },
+              "tag": "socks"
+          }],
+          "log": { "loglevel": "warning" },
+          "outbounds": [
+              {
+                  "mux": { "concurrency": -1, "enabled": false },
+                  "protocol": "vless",
+                  "settings": { "vnext": [{ "address": domain, "port": 443, "users": [{ "encryption": "none", "id": uuid, "level": 8 }] }] },
+                  "streamSettings": {
+                      "finalmask": {
+                          "tcp": [{ "type": "fragment", "settings": { "delay": "2-4", "length": "20-25", "packets": "tlshello" } }],
+                          "udp": [{ "type": "noise", "settings": { "delay": "10-16", "length": "10-20" } }]
+                      },
+                      "network": "xhttp", "security": "tls",
+                      "sockopt": { "domainStrategy": "UseIP", "happyEyeballs": { "interleave": 2, "maxConcurrentTry": 4, "prioritizeIPv6": false, "tryDelayMs": 250 } },
+                      "tlsSettings": { "allowInsecure": false, "alpn": ["h3", "h2"], "fingerprint": "chrome", "serverName": sni },
+                      "xhttpSettings": { "host": "", "mode": "packet-up", "path": pathStr }
+                  },
+                  "tag": "proxy"
+              },
+              { "protocol": "freedom", "streamSettings": { "network": "tcp", "sockopt": { "domainStrategy": "UseIP" } }, "tag": "direct" },
+              { "protocol": "blackhole", "settings": { "response": { "type": "http" } }, "tag": "block" }
+          ],
+          "remarks": configName + " 1",
+          "routing": { "domainStrategy": "AsIs", "rules": [{ "network": "udp", "outboundTag": "block", "port": "443", "type": "field" }, { "port": "0-65535", "outboundTag": "proxy", "type": "field" }] }
+      };
+
+      return JSON.stringify(config);
+
   app.post("/api/users/:id/configs/:configId/send", async (req, res) => {
     try {
-      const { id, configId } = req.params;
+      const { id, configId } = req.params; // configId همان uuid است
       const botToken = process.env.BOT_TOKEN;
 
       if (!botToken) {
@@ -218,58 +266,55 @@ async function startServer() {
 
       const db = getDatabase();
       
-      // استخراج اطلاعات کانفیگ از دیتابیس
       const service = db.prepare("SELECT * FROM services WHERE uuid = ?").get(configId) as any;
       if (!service) {
          return res.status(404).json({ success: false, message: "کانفیگ در دیتابیس یافت نشد." });
       }
 
-      // استخراج اطلاعات سرور متصل به این کانفیگ
       const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(service.server_id) as any;
-      if (!server) {
-         return res.status(404).json({ success: false, message: "سرور مربوطه یافت نشد." });
-      }
 
-      // ساخت لینک سابسکریپشن بر اساس آدرس سرور و ساب‌آیدی
-      const domain = server.address || "your-domain.com"; 
-      const subLink = `https://${domain}/sub/${service.sub_id}`;
+      // ساخت کانفیگ‌ها دقیقاً مثل handlers.js
+      const currentConfigName = service.name || "CypherNET💎";
+      const config1 = generateMtnConfig(service.uuid, currentConfigName, server);
+      const config2 = generateMciConfig(service.uuid, currentConfigName, server);
       
-      // قالب پیش‌فرض پیام (تا زمان ارسال قالب اصلی ربات توسط شما)
-      const messageText = `
-✅ <b>سرویس شما آماده استفاده است</b>
+      const msg1 = `🟡 <b>کانفیگ شماره ۱:</b>\nبرای کپی کردن کانفیگ روی آن ضربه بزنید:\n\n<blockquote expandable><code>${config1}</code></blockquote>`;
+      const msg2 = `🔵 <b>کانفیگ شماره ۲:</b>\nبرای کپی کردن کانفیگ روی آن ضربه بزنید:\n\n<blockquote expandable><code>${config2}</code></blockquote>\n\n⚠️ <b>نکته مهم:</b>\nلطفاً هر دو کانفیگ را به برنامه اضافه کنید و هرکدام که سرعت و پایداری بهتری داشت را متصل شوید. (ممکن است هر کانفیگ روی اپراتورهای خاصی عملکرد بهتری داشته باشد)`;
 
-👤 نام سرویس: <code>${service.email}</code>
+      // تابع کمکی برای ارسال پیام تلگرام
+      const sendToTelegram = async (text: string) => {
+        return fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: id,
+            text: text,
+            parse_mode: "HTML",
+          }),
+        });
+      };
 
-🌐 لینک اشتراک (سابسکریپشن):
-<code>${subLink}</code>
-
-📌 این لینک را در نرم‌افزار مربوطه کپی کنید.
-`;
-
-      const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: id,
-          text: messageText,
-          parse_mode: "HTML",
-        }),
-      });
-
-      const tgData = await tgResponse.json();
-
-      if (!tgData.ok) {
-        return res.status(500).json({ success: false, message: `خطای تلگرام: ${tgData.description}` });
+      // ارسال پیام اول
+      const res1 = await sendToTelegram(msg1);
+      const data1 = await res1.json();
+      if (!data1.ok) {
+        return res.status(500).json({ success: false, message: `خطای تلگرام در پیام ۱: ${data1.description}` });
       }
 
-      res.json({ success: true, message: "کانفیگ با موفقیت ارسال شد." });
+      // ارسال پیام دوم
+      const res2 = await sendToTelegram(msg2);
+      const data2 = await res2.json();
+      if (!data2.ok) {
+        return res.status(500).json({ success: false, message: `خطای تلگرام در پیام ۲: ${data2.description}` });
+      }
+
+      res.json({ success: true, message: "کانفیگ‌ها با موفقیت ارسال شدند." });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ success: false, message: err.message });
     }
   });
-
-  // اندپوینت تمدید کانفیگ
+  
   // اندپوینت تمدید کانفیگ
   app.post("/api/users/:id/configs/:configId/renew", async (req, res) => {
     try {
