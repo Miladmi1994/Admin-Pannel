@@ -315,67 +315,43 @@ async function startServer() {
     }
   });
 
-  // اندپوینت تمدید کانفیگ
   app.post("/api/users/:id/configs/:configId/renew", async (req, res) => {
     try {
       const { configId } = req.params;
+      const { days, gb } = req.body; // دریافت مقادیر از پنل وب
       const db = getDatabase();
 
-      // ۱. پیدا کردن کانفیگ و سرور از دیتابیس
       const service = db.prepare("SELECT * FROM services WHERE uuid = ?").get(configId) as any;
-      if (!service) {
-         return res.status(404).json({ success: false, message: "کانفیگ یافت نشد." });
-      }
+      if (!service) return res.status(404).json({ success: false, message: "کانفیگ یافت نشد." });
 
       const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(service.server_id) as any;
-      if (!server) {
-         return res.status(404).json({ success: false, message: "سرور مربوط به این کانفیگ یافت نشد." });
-      }
+      if (!server) return res.status(404).json({ success: false, message: "سرور مربوطه یافت نشد." });
 
-      // افزودن ۳۰ روز به زمان فعلی (تمدید یک ماهه)
-      const newExpiry = Date.now() + (30 * 24 * 60 * 60 * 1000);
-      const totalBytes = service.panel_total || 0; // نگه داشتن حجم قبلی
+      // محاسبه زمان و حجم داینامیک
+      const newExpiry = Date.now() + (Number(days) * 24 * 60 * 60 * 1000);
+      const totalBytes = Number(gb) * 1073741824; 
 
-      // ۲. ارتباط با پنل (مشابه منطق api.js ربات)
-      // الف: حذف اکانت قبلی برای صفر کردن مصرف
-      await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/del/${encodeURIComponent(service.email)}?keepTraffic=0`, {
+      const updateRes = await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/update/${configId}`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${server.api_token}` }
-      });
-
-      // ب: ساخت مجدد اکانت با زمان جدید
-      const subId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
-      const addRes = await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/add`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${server.api_token}`,
-          "Content-Type": "application/json"
-        },
+        headers: { "Authorization": `Bearer ${server.api_token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          client: {
-            id: configId,
-            email: service.email,
-            totalGB: totalBytes,
-            expiryTime: newExpiry,
-            enable: true,
-            limitIp: 0,
-            subId: subId
-          },
-          inboundIds: [server.inbound_id || 1]
+          id: configId,
+          client: { id: configId, email: service.email, totalGB: totalBytes, expiryTime: newExpiry, enable: true, limitIp: 0, subId: service.sub_id || "" }
         })
       });
 
-      const addData = await addRes.json();
-      if (!addData.success) {
-         return res.status(500).json({ success: false, message: "خطا در پنل: " + addData.msg });
-      }
+      const updateData = await updateRes.json();
+      if (!updateData.success) return res.status(500).json({ success: false, message: "خطا در آپدیت پنل." });
 
-      // ۳. آپدیت دیتابیس سایت: صفر کردن حجم مصرفی و ثبت تاریخ انقضای جدید
-      db.prepare("UPDATE services SET panel_used = 0, panel_expiry = ? WHERE uuid = ?").run(newExpiry, configId);
+      await fetch(`${server.panel_url}${server.web_base_path}/panel/api/inbounds/${server.inbound_id || 1}/resetClientTraffic/${encodeURIComponent(service.email)}`, {
+        method: "POST", headers: { "Authorization": `Bearer ${server.api_token}` }
+      });
 
-      res.json({ success: true, message: "کانفیگ با موفقیت تمدید و در پنل سرور ریست شد." });
+      // آپدیت دیتابیس (ربات هم از همین مقادیر استفاده خواهد کرد)
+      db.prepare("UPDATE services SET panel_used = 0, panel_total = ?, panel_expiry = ? WHERE uuid = ?").run(totalBytes, newExpiry, configId);
+
+      res.json({ success: true, message: "کانفیگ با حجم و زمان دلخواه آپدیت شد." });
     } catch (err: any) {
-      console.error(err);
       res.status(500).json({ success: false, message: err.message });
     }
   });

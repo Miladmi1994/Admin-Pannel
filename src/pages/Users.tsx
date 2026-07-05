@@ -16,6 +16,8 @@ export default function Users() {
   const [expandedUsers, setExpandedUsers] = useState<string[]>([]);
   const [isPurchaseSlideOpen, setIsPurchaseSlideOpen] = useState(false);
   const [purchaseOrderId, setPurchaseOrderId] = useState('');
+  const [renewDays, setRenewDays] = useState(30);
+  const [renewGB, setRenewGB] = useState(50);
   
   const [actionTargetId, setActionTargetId] = useState<string>('');
   const [actionConfigId, setActionConfigId] = useState<string>('');
@@ -89,7 +91,9 @@ export default function Users() {
     handleAction(`ارسال کانفیگ ${type}`, userId, configId);
   };
 
-  const handleRenewConfig = (userId: string, configId: string) => {
+  const handleRenewConfig = (userId: string, configId: string, currentVolume: number) => {
+    setRenewGB(currentVolume > 0 ? currentVolume : 50);
+    setRenewDays(30); // می‌توانید برای ۲ ماه این را روی 60 بگذارید
     handleAction('تمدید کانفیگ', userId, configId);
   };
 
@@ -135,10 +139,10 @@ export default function Users() {
           headers: { 'Content-Type': 'application/json' }
         });
       } else if (modalType === 'تمدید کانفیگ') {
-        // فراخوانی API تمدید کانفیگ
         await fetch(`/api/users/${actionTargetId}/configs/${actionConfigId}/renew`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ days: renewDays, gb: renewGB })
         });
       }
       
@@ -207,7 +211,7 @@ export default function Users() {
             <button onClick={() => handleSendConfig(userId, conf.id, '1')} className="w-9 h-9 bg-transparent text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all duration-200 rounded-md flex items-center justify-center opacity-70 hover:opacity-100" title="ارسال کانفیگ">
               <span className="material-symbols-outlined text-[18px] font-light">send</span>
             </button>
-            <button onClick={() => handleRenewConfig(userId, conf.id)} className="w-10 h-10 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors rounded-lg border border-blue-500/20 flex items-center justify-center" title="تمدید کانفیگ">
+            <button onClick={() => handleRenewConfig(userId, conf.id, conf.volumeTotal)} className="w-10 h-10 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors rounded-lg border border-blue-500/20 flex items-center justify-center" title="تمدید کانفیگ">
               <span className="material-symbols-outlined text-[18px]">autorenew</span>
             </button>
             <button onClick={() => handleDeleteConfig(userId, conf.id)} className="w-10 h-10 bg-error/10 text-error hover:bg-error hover:text-white transition-colors rounded-lg border border-error/20 flex items-center justify-center" title="حذف کانفیگ">
@@ -399,8 +403,25 @@ export default function Users() {
             آیا از انجام عملیات <span className="font-bold text-primary">"{modalType}"</span> اطمینان دارید؟
           </p>
           
-          {/* نمایش دکمه‌های متفاوت برای حالت حذف کانفیگ */}
-          {modalType === 'حذف کانفیگ' ? (
+          {modalType === 'تمدید کانفیگ' ? (
+            <div className="flex flex-col gap-4 mt-6 w-full text-right">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-bold text-on-surface">حجم جدید (گیگابایت):</label>
+                <input type="number" value={renewGB} onChange={e => setRenewGB(Number(e.target.value))} className="w-full bg-surface-container-highest border border-outline-variant/50 focus:border-primary focus:ring-1 focus:ring-primary/50 rounded-lg p-3 text-on-surface outline-none transition-all" dir="ltr" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-bold text-on-surface">زمان جدید (روز):</label>
+                <input type="number" value={renewDays} onChange={e => setRenewDays(Number(e.target.value))} className="w-full bg-surface-container-highest border border-outline-variant/50 focus:border-primary focus:ring-1 focus:ring-primary/50 rounded-lg p-3 text-on-surface outline-none transition-all" dir="ltr" />
+              </div>
+              <div className="flex justify-end sm:justify-center gap-3 mt-4 w-full">
+                <button onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 border border-outline-variant text-on-surface hover:bg-surface-variant rounded-lg font-label-lg transition-colors cursor-pointer">انصراف</button>
+                <button onClick={executeAction} className="px-5 py-2.5 bg-primary text-on-primary hover:bg-primary-fixed rounded-lg font-label-lg transition-colors flex items-center gap-2 cursor-pointer">
+                  <span className="material-symbols-outlined text-[20px]">check</span>
+                  تایید و تمدید
+                </button>
+              </div>
+            </div>
+          ) : modalType === 'حذف کانفیگ' ? (
             <div className="flex flex-col gap-3 mt-6 w-full">
               <button onClick={() => executeDeleteConfig('panel')} className="px-5 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-500 hover:bg-amber-500 hover:text-white rounded-lg font-label-lg transition-colors flex items-center justify-center gap-2 cursor-pointer w-full">
                 <span className="material-symbols-outlined text-[20px]">delete_sweep</span>
