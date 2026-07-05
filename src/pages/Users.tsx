@@ -204,8 +204,8 @@ export default function Users() {
           </div>
           
           <div className="flex items-center gap-2 shrink-0 justify-end md:mr-4">
-            <button onClick={() => handleSendConfig(userId, conf.id, '1')} className="w-10 h-10 bg-surface-variant text-on-surface hover:bg-primary/20 hover:text-primary transition-colors rounded-lg flex items-center justify-center border border-transparent hover:border-primary/20" title="ارسال کانفیگ ۱">
-              <span className="material-symbols-outlined text-[18px]">send</span>
+            <button onClick={() => handleSendConfig(userId, conf.id, '1')} className="w-9 h-9 bg-transparent text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all duration-200 rounded-md flex items-center justify-center opacity-70 hover:opacity-100" title="ارسال کانفیگ">
+              <span className="material-symbols-outlined text-[18px] font-light">send</span>
             </button>
             <button onClick={() => handleRenewConfig(userId, conf.id)} className="w-10 h-10 bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white transition-colors rounded-lg border border-blue-500/20 flex items-center justify-center" title="تمدید کانفیگ">
               <span className="material-symbols-outlined text-[18px]">autorenew</span>

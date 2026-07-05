@@ -207,19 +207,44 @@ async function startServer() {
   });
 
   // اندپوینت ارسال کانفیگ به تلگرام
-  // اندپوینت ارسال کانفیگ به تلگرام
   app.post("/api/users/:id/configs/:configId/send", async (req, res) => {
     try {
       const { id, configId } = req.params;
       const botToken = process.env.BOT_TOKEN;
 
       if (!botToken) {
-        return res.status(500).json({ success: false, message: "توکن ربات در تنظیمات سرور یافت نشد." });
+        return res.status(500).json({ success: false, message: "توکن ربات تنظیم نشده است." });
       }
 
-      // در این بخش باید کوئری دیتابیس زده شود تا لینک اصلی کانفیگ/سابسکریپشن استخراج شود.
-      // فعلاً برای تست صحت ارتباط، این پیام تستی ارسال می‌شود:
-      const messageText = `✅ <b>کانفیگ شما آماده است</b>\n\nآیدی کانفیگ: <code>${configId}</code>\n\n(لینک واقعی پس از اتصال به دیتابیس در اینجا قرار می‌گیرد)`;
+      const db = getDatabase();
+      
+      // استخراج اطلاعات کانفیگ از دیتابیس
+      const service = db.prepare("SELECT * FROM services WHERE uuid = ?").get(configId) as any;
+      if (!service) {
+         return res.status(404).json({ success: false, message: "کانفیگ در دیتابیس یافت نشد." });
+      }
+
+      // استخراج اطلاعات سرور متصل به این کانفیگ
+      const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(service.server_id) as any;
+      if (!server) {
+         return res.status(404).json({ success: false, message: "سرور مربوطه یافت نشد." });
+      }
+
+      // ساخت لینک سابسکریپشن بر اساس آدرس سرور و ساب‌آیدی
+      const domain = server.address || "your-domain.com"; 
+      const subLink = `https://${domain}/sub/${service.sub_id}`;
+      
+      // قالب پیش‌فرض پیام (تا زمان ارسال قالب اصلی ربات توسط شما)
+      const messageText = `
+✅ <b>سرویس شما آماده استفاده است</b>
+
+👤 نام سرویس: <code>${service.email}</code>
+
+🌐 لینک اشتراک (سابسکریپشن):
+<code>${subLink}</code>
+
+📌 این لینک را در نرم‌افزار مربوطه کپی کنید.
+`;
 
       const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
@@ -234,11 +259,10 @@ async function startServer() {
       const tgData = await tgResponse.json();
 
       if (!tgData.ok) {
-        console.error("خطای تلگرام:", tgData);
-        return res.status(500).json({ success: false, message: `خطا از سمت تلگرام: ${tgData.description}` });
+        return res.status(500).json({ success: false, message: `خطای تلگرام: ${tgData.description}` });
       }
 
-      res.json({ success: true, message: "پیام با موفقیت به ربات ارسال شد." });
+      res.json({ success: true, message: "کانفیگ با موفقیت ارسال شد." });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ success: false, message: err.message });
