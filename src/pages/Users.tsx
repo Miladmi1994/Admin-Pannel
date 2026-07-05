@@ -35,17 +35,18 @@ export default function Users() {
           status: u.isBanned ? 'مسدود' : u.isVip ? 'VIP' : 'عادی',
           isActive: !u.isBanned,
           configs: (u.configs || []).map((c: any) => {
-          let remainDays = 0;
-          let isUnsynced = false;
+           let remainDays = 0;
+           
+           // کانفیگ فقط زمانی در انتظار سینک است که هیچ دیتای مصرفی از پنل نداشته باشد
+           let isUnsynced = !c.panelStats; 
 
-          // اگر دیتابیس هنوز تایم و حجم نگرفته یعنی کانفیگ تازه متولد شده
-          if (c.panelStats && c.panelStats.expiry > 0) {
-            remainDays = Math.max(0, Math.ceil((c.panelStats.expiry - Date.now()) / (1000 * 60 * 60 * 24)));
-          } else {
-            isUnsynced = true; 
-          }
+           if (c.panelStats?.expiry > 0) {
+             remainDays = Math.max(0, Math.ceil((c.panelStats.expiry - Date.now()) / (1000 * 60 * 60 * 24)));
+           } else if (c.panelStats && c.panelStats.expiry === 0) {
+             remainDays = 999; // کانفیگ‌هایی که زمانشان نامحدود است
+           }
 
-          return {
+           return {
               id: c.uuid,
               name: c.name || 'بدون نام',
               planName: 'بسته کانفیگ', 
@@ -54,8 +55,8 @@ export default function Users() {
               volumeTotal: c.panelStats?.total ? parseFloat((c.panelStats.total / (1024**3)).toFixed(2)) : 0,
               volumeUsed: c.panelStats?.used ? parseFloat((c.panelStats.used / (1024**3)).toFixed(2)) : 0,
               timeRemain: remainDays,
-              isUnsynced // فیلد جدید اضافه شد
-          };
+              isUnsynced
+           };
         })
         }));
         setUsers(formattedUsers);
@@ -206,7 +207,7 @@ export default function Users() {
                 )}
               </span>
               <span className="text-on-surface-variant font-mono">
-                {conf.isUnsynced ? 'تازه ساخت' : `${conf.timeRemain} روز`}
+                {conf.isUnsynced ? 'تازه ساخت' : conf.timeRemain === 999 ? 'نامحدود' : `${conf.timeRemain} روز`}
               </span>
             </div>
              <div className="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden flex" dir="ltr">
