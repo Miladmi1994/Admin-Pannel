@@ -303,9 +303,27 @@ export default function Users() {
         ) : (
           filteredUsers.map((user, i) => {
             // تفکیک کانفیگ‌های فعال و منقضی
-            const activeConfigs = (user.configs || []).filter((c: any) => c.isUnsynced || (c.timeRemain > 0 && (c.volumeTotal === 0 || c.volumeUsed < c.volumeTotal)));
-const expiredConfigs = (user.configs || []).filter((c: any) => !c.isUnsynced && (c.timeRemain === 0 || (c.volumeTotal > 0 && c.volumeUsed >= c.volumeTotal)));
+            // جایگزین کردن بخش activeConfigs و expiredConfigs:
+              const activeConfigs = (user.configs || []).filter((c: any) => {
+                  // اگر دیتابیس هیچ استتی ندارد، یعنی در انتظار سینک است (باید در فعال‌ها باشد)
+                  if (!c.panelStats) return true; 
+                  
+                  // در غیر این صورت، شرط فعال بودن واقعی:
+                  const isExpired = c.panelStats.expiry > 0 && c.panelStats.expiry < Date.now();
+                  const isVolumeFinished = c.panelStats.total > 0 && c.panelStats.used >= c.panelStats.total;
+                  
+                  return !isExpired && !isVolumeFinished;
+              });
 
+              const expiredConfigs = (user.configs || []).filter((c: any) => {
+                  // کانفیگ در انتظار سینک، جزو منقضی‌ها نیست
+                  if (!c.panelStats) return false;
+                  
+                  const isExpired = c.panelStats.expiry > 0 && c.panelStats.expiry < Date.now();
+                  const isVolumeFinished = c.panelStats.total > 0 && c.panelStats.used >= c.panelStats.total;
+                  
+                  return isExpired || isVolumeFinished;
+              });
             return (
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
