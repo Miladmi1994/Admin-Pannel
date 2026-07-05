@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import dotenv from "dotenv";
+import crypto from "crypto";
+import { getDatabase } from "./db/sqlite-store.js";
 import { createServer as createViteServer } from "vite";
 import {
   openDatabase,
@@ -205,23 +207,106 @@ async function startServer() {
   });
 
   // اندپوینت ارسال کانفیگ به تلگرام
+  // اندپوینت ارسال کانفیگ به تلگرام
   app.post("/api/users/:id/configs/:configId/send", async (req, res) => {
     try {
       const { id, configId } = req.params;
-      // منطق دریافت لینک کانفیگ از دیتابیس و ارسال پیام تلگرامی به کاربر
-      res.json({ success: true, message: "کانفیگ با موفقیت ارسال شد." });
+      const botToken = process.env.BOT_TOKEN;
+
+      if (!botToken) {
+        return res.status(500).json({ success: false, message: "توکن ربات در تنظیمات سرور یافت نشد." });
+      }
+
+      // در این بخش باید کوئری دیتابیس زده شود تا لینک اصلی کانفیگ/سابسکریپشن استخراج شود.
+      // فعلاً برای تست صحت ارتباط، این پیام تستی ارسال می‌شود:
+      const messageText = `✅ <b>کانفیگ شما آماده است</b>\n\nآیدی کانفیگ: <code>${configId}</code>\n\n(لینک واقعی پس از اتصال به دیتابیس در اینجا قرار می‌گیرد)`;
+
+      const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: id,
+          text: messageText,
+          parse_mode: "HTML",
+        }),
+      });
+
+      const tgData = await tgResponse.json();
+
+      if (!tgData.ok) {
+        console.error("خطای تلگرام:", tgData);
+        return res.status(500).json({ success: false, message: `خطا از سمت تلگرام: ${tgData.description}` });
+      }
+
+      res.json({ success: true, message: "پیام با موفقیت به ربات ارسال شد." });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ success: false, message: err.message });
     }
   });
 
   // اندپوینت تمدید کانفیگ
+  // اندپوینت تمدید کانفیگ
   app.post("/api/users/:id/configs/:configId/renew", async (req, res) => {
     try {
-      const { id, configId } = req.params;
-      // منطق به روزرسانی تاریخ انقضا یا حجم در پنل سرور و دیتابیس SQLite
-      res.json({ success: true, message: "کانفیگ با موفقیت تمدید شد." });
+      const { configId } = req.params;
+      const db = getDatabase();
+
+      // ۱. پیدا کردن کانفیگ و سرور از دیتابیس
+      const service = db.prepare("SELECT * FROM services WHERE uuid = ?").get(configId) as any;
+      if (!service) {
+         return res.status(404).json({ success: false, message: "کانفیگ یافت نشد." });
+      }
+
+      const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(service.server_id) as any;
+      if (!server) {
+         return res.status(404).json({ success: false, message: "سرور مربوط به این کانفیگ یافت نشد." });
+      }
+
+      // افزودن ۳۰ روز به زمان فعلی (تمدید یک ماهه)
+      const newExpiry = Date.now() + (30 * 24 * 60 * 60 * 1000);
+      const totalBytes = service.panel_total || 0; // نگه داشتن حجم قبلی
+
+      // ۲. ارتباط با پنل (مشابه منطق api.js ربات)
+      // الف: حذف اکانت قبلی برای صفر کردن مصرف
+      await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/del/${encodeURIComponent(service.email)}?keepTraffic=0`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${server.api_token}` }
+      });
+
+      // ب: ساخت مجدد اکانت با زمان جدید
+      const subId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+      const addRes = await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/add`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${server.api_token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          client: {
+            id: configId,
+            email: service.email,
+            totalGB: totalBytes,
+            expiryTime: newExpiry,
+            enable: true,
+            limitIp: 0,
+            subId: subId
+          },
+          inboundIds: [server.inbound_id || 1]
+        })
+      });
+
+      const addData = await addRes.json();
+      if (!addData.success) {
+         return res.status(500).json({ success: false, message: "خطا در پنل: " + addData.msg });
+      }
+
+      // ۳. آپدیت دیتابیس سایت: صفر کردن حجم مصرفی و ثبت تاریخ انقضای جدید
+      db.prepare("UPDATE services SET panel_used = 0, panel_expiry = ? WHERE uuid = ?").run(newExpiry, configId);
+
+      res.json({ success: true, message: "کانفیگ با موفقیت تمدید و در پنل سرور ریست شد." });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ success: false, message: err.message });
     }
   });
@@ -230,13 +315,34 @@ async function startServer() {
   app.post("/api/configs/:configId/delete", async (req, res) => {
     try {
       const { configId } = req.params;
-      const { mode, userId } = req.body; // mode: 'panel' | 'both'
+      const { mode } = req.body; 
+      const db = getDatabase();
 
-      // ۱. متد حذف از روی API پنل سرور (X-UI)
-      // ۲. حذف از جدول دیتابیس در صورت انتخاب حالت both
-      
-      res.json({ success: true, message: "عملیات حذف با موفقیت انجام شد." });
+      const service = db.prepare("SELECT * FROM services WHERE uuid = ?").get(configId) as any;
+      if (!service) {
+         return res.status(404).json({ success: false, message: "کانفیگ در دیتابیس یافت نشد." });
+      }
+
+      const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(service.server_id) as any;
+
+      // ۱. حذف از روی پنل سرور (در صورت وجود سرور)
+      if (server) {
+        await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/del/${encodeURIComponent(service.email)}?keepTraffic=0`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${server.api_token}` }
+        });
+      }
+
+      // ۲. مدیریت دیتابیس بر اساس انتخاب ادمین (mode)
+      if (mode === 'both') {
+        db.prepare("DELETE FROM services WHERE uuid = ?").run(configId);
+      } else {
+        db.prepare("UPDATE services SET deleted_from_panel = 1 WHERE uuid = ?").run(configId);
+      }
+
+      res.json({ success: true, message: "عملیات حذف با موفقیت روی سرور و دیتابیس انجام شد." });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ success: false, message: err.message });
     }
   });
