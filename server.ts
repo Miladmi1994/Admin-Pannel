@@ -315,10 +315,11 @@ async function startServer() {
     }
   });
 
+  // اندپوینت تمدید کانفیگ
   app.post("/api/users/:id/configs/:configId/renew", async (req, res) => {
     try {
       const { configId } = req.params;
-      const { days, gb } = req.body; // دریافت مقادیر از پنل وب
+      const { days, gb } = req.body;
       const db = getDatabase();
 
       const service = db.prepare("SELECT * FROM services WHERE uuid = ?").get(configId) as any;
@@ -327,31 +328,52 @@ async function startServer() {
       const server = db.prepare("SELECT * FROM servers WHERE id = ?").get(service.server_id) as any;
       if (!server) return res.status(404).json({ success: false, message: "سرور مربوطه یافت نشد." });
 
-      // محاسبه زمان و حجم داینامیک
       const newExpiry = Date.now() + (Number(days) * 24 * 60 * 60 * 1000);
-      const totalBytes = Number(gb) * 1073741824; 
+      const totalBytes = Number(gb) * 1073741824;
+      const inboundId = server.inbound_id || 1;
 
-      const updateRes = await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/update/${configId}`, {
+      // ۱. حذف اکانت با همان ایمیل فعلی
+      await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/del/${encodeURIComponent(service.email)}?keepTraffic=0`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${server.api_token}`, "Content-Type": "application/json" },
+        headers: { "Authorization": `Bearer ${server.api_token}` }
+      });
+
+      // ۲. ساخت مجدد با ایمیل، UUID و SubId ثابت
+      const addRes = await fetch(`${server.panel_url}${server.web_base_path}/panel/api/clients/add`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${server.api_token}`,
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify({
-          id: configId,
-          client: { id: configId, email: service.email, totalGB: totalBytes, expiryTime: newExpiry, enable: true, limitIp: 0, subId: service.sub_id || "" }
+          client: {
+            id: configId,
+            email: service.email, // استفاده از همان ایمیل قبلی
+            totalGB: totalBytes,
+            expiryTime: newExpiry,
+            enable: true,
+            limitIp: 0,
+            subId: service.sub_id || ""
+          },
+          inboundIds: [inboundId]
         })
       });
 
-      const updateData = await updateRes.json();
-      if (!updateData.success) return res.status(500).json({ success: false, message: "خطا در آپدیت پنل." });
+      const addData = await addRes.json();
+      if (!addData.success) {
+         return res.status(500).json({ success: false, message: "خطا در ساخت مجدد در پنل: " + addData.msg });
+      }
 
-      await fetch(`${server.panel_url}${server.web_base_path}/panel/api/inbounds/${server.inbound_id || 1}/resetClientTraffic/${encodeURIComponent(service.email)}`, {
-        method: "POST", headers: { "Authorization": `Bearer ${server.api_token}` }
-      });
+      // ۳. آپدیت دیتابیس (بدون تغییر ایمیل)
+      db.prepare(`
+        UPDATE services 
+        SET panel_used = 0, panel_total = ?, panel_expiry = ?, deleted_from_panel = 0 
+        WHERE uuid = ?
+      `).run(totalBytes, newExpiry, configId);
 
-      // آپدیت دیتابیس (ربات هم از همین مقادیر استفاده خواهد کرد)
-      db.prepare("UPDATE services SET panel_used = 0, panel_total = ?, panel_expiry = ? WHERE uuid = ?").run(totalBytes, newExpiry, configId);
-
-      res.json({ success: true, message: "کانفیگ با حجم و زمان دلخواه آپدیت شد." });
+      res.json({ success: true, message: "کانفیگ با موفقیت تمدید و ترافیک ریست شد." });
     } catch (err: any) {
+      console.error(err);
       res.status(500).json({ success: false, message: err.message });
     }
   });
