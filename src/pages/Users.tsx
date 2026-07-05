@@ -35,21 +35,28 @@ export default function Users() {
           status: u.isBanned ? 'مسدود' : u.isVip ? 'VIP' : 'عادی',
           isActive: !u.isBanned,
           configs: (u.configs || []).map((c: any) => {
-             let remainDays = 0;
-             if (c.panelStats?.expiry) {
-               remainDays = Math.max(0, Math.ceil((c.panelStats.expiry - Date.now()) / (1000 * 60 * 60 * 24)));
-             }
-             return {
-                id: c.uuid,
-                name: c.name || 'بدون نام',
-                planName: 'بسته کانفیگ', 
-                email: c.email,
-                server: c.serverId,
-                volumeTotal: c.panelStats?.total ? parseFloat((c.panelStats.total / (1024**3)).toFixed(2)) : 0,
-                volumeUsed: c.panelStats?.used ? parseFloat((c.panelStats.used / (1024**3)).toFixed(2)) : 0,
-                timeRemain: remainDays
-             };
-          })
+          let remainDays = 0;
+          let isUnsynced = false;
+
+          // اگر دیتابیس هنوز تایم و حجم نگرفته یعنی کانفیگ تازه متولد شده
+          if (c.panelStats && c.panelStats.expiry > 0) {
+            remainDays = Math.max(0, Math.ceil((c.panelStats.expiry - Date.now()) / (1000 * 60 * 60 * 24)));
+          } else {
+            isUnsynced = true; 
+          }
+
+          return {
+              id: c.uuid,
+              name: c.name || 'بدون نام',
+              planName: 'بسته کانفیگ', 
+              email: c.email,
+              server: c.serverId,
+              volumeTotal: c.panelStats?.total ? parseFloat((c.panelStats.total / (1024**3)).toFixed(2)) : 0,
+              volumeUsed: c.panelStats?.used ? parseFloat((c.panelStats.used / (1024**3)).toFixed(2)) : 0,
+              timeRemain: remainDays,
+              isUnsynced // فیلد جدید اضافه شد
+          };
+        })
         }));
         setUsers(formattedUsers);
       }
@@ -187,17 +194,21 @@ export default function Users() {
           </div>
           
           <div className="flex-1 min-w-[200px]">
-             <div className="flex justify-between text-xs mb-1.5">
-               <span className="text-on-surface-variant flex gap-1">
-                 مصرف:
-                 {conf.volumeTotal === 0 ? (
-                   <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB</span>
-                 ) : (
-                   <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB / {conf.volumeTotal}GB</span>
-                 )}
-               </span>
-               <span className="text-on-surface-variant font-mono">{conf.timeRemain} روز</span>
-             </div>
+            <div className="flex justify-between text-xs mb-1.5">
+              <span className="text-on-surface-variant flex gap-1 items-center">
+                مصرف:
+                {conf.isUnsynced ? (
+                  <span className="font-mono text-on-surface text-[10px] bg-primary/10 px-2 py-0.5 rounded-full text-primary">در انتظار سینک ربات...</span>
+                ) : conf.volumeTotal === 0 ? (
+                  <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB</span>
+                ) : (
+                  <span className="font-mono text-on-surface" dir="ltr">{conf.volumeUsed}GB / {conf.volumeTotal}GB</span>
+                )}
+              </span>
+              <span className="text-on-surface-variant font-mono">
+                {conf.isUnsynced ? 'تازه ساخت' : `${conf.timeRemain} روز`}
+              </span>
+            </div>
              <div className="h-1.5 w-full bg-surface-variant rounded-full overflow-hidden flex" dir="ltr">
                {conf.volumeTotal === 0 ? (
                  <div className="h-full bg-primary rounded-full w-full opacity-50"></div>
@@ -291,8 +302,8 @@ export default function Users() {
         ) : (
           filteredUsers.map((user, i) => {
             // تفکیک کانفیگ‌های فعال و منقضی
-            const activeConfigs = (user.configs || []).filter((c: any) => c.timeRemain > 0 && (c.volumeTotal === 0 || c.volumeUsed < c.volumeTotal));
-            const expiredConfigs = (user.configs || []).filter((c: any) => c.timeRemain === 0 || (c.volumeTotal > 0 && c.volumeUsed >= c.volumeTotal));
+            const activeConfigs = (user.configs || []).filter((c: any) => c.isUnsynced || (c.timeRemain > 0 && (c.volumeTotal === 0 || c.volumeUsed < c.volumeTotal)));
+const expiredConfigs = (user.configs || []).filter((c: any) => !c.isUnsynced && (c.timeRemain === 0 || (c.volumeTotal > 0 && c.volumeUsed >= c.volumeTotal)));
 
             return (
               <motion.div 
